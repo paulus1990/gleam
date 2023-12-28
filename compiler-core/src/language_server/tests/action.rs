@@ -60,6 +60,101 @@ fn remove_unused_action(src: &str, line: u32) -> String {
     }
 }
 
+fn suggest_pipeline(src: &str, position_start: Position, position_end: Position) -> String {
+    let io = LanguageServerTestIO::new();
+    let mut engine = setup_engine(&io);
+
+    _ = io.src_module("list", r#"
+            pub fn map(list: List(a), with fun: fn(a) -> b) -> List(b) {
+                do_map(list, fun, [])
+            }
+
+            fn do_map(list: List(a), fun: fn(a) -> b, acc: List(b)) -> List(b) {
+                case list {
+                    [] -> reverse(acc)
+                    [x, ..xs] -> do_map(xs, fun, [fun(x), ..acc])
+                }
+            }
+
+            pub fn take_while(
+                in list: List(a),
+                satisfying predicate: fn(a) -> Bool,
+              ) -> List(a) {
+                do_take_while(list, predicate, [])
+            }
+
+            fn do_take_while(
+                list: List(a),
+                predicate: fn(a) -> Bool,
+                acc: List(a),
+              ) -> List(a) {
+                case list {
+                  [] -> reverse(acc)
+                  [first, ..rest] ->
+                    case predicate(first) {
+                      True -> do_take_while(rest, predicate, [first, ..acc])
+                      False -> reverse(acc)
+                    }
+                }
+              }
+            
+            pub fn reverse(xs: List(a)) -> List(a) {
+                do_reverse(xs)
+            }
+            
+            fn do_reverse(list) {
+                do_reverse_acc(list, [])
+            }
+            
+            fn do_reverse_acc(remaining, accumulator) {
+                case remaining {
+                    [] -> accumulator
+                    [item, ..rest] -> do_reverse_acc(rest, [item, ..accumulator])
+                }
+            }
+
+            pub fn is_ok() {}
+        "#);
+    _ = io.src_module("app", src);
+    engine.compile_please().result.expect("compiled");
+
+    // create the code action request
+    let path = Utf8PathBuf::from(if cfg!(target_family = "windows") {
+        r"\\?\C:\src\app.gleam"
+    } else {
+        "/src/app.gleam"
+    });
+
+    let url = Url::from_file_path(path).unwrap();
+
+    let params = CodeActionParams {
+        text_document: TextDocumentIdentifier::new(url.clone()),
+        context: CodeActionContext {
+            diagnostics: vec![],
+            only: None,
+            trigger_kind: None,
+        },
+        range: Range::new(position_start, position_end),
+        work_done_progress_params: WorkDoneProgressParams {
+            work_done_token: None,
+        },
+        partial_result_params: PartialResultParams {
+            partial_result_token: None,
+        },
+    };
+
+    let response = engine.action(params).result.unwrap().and_then(|actions| {
+        actions
+            .into_iter()
+            .find(|action| action.title == "Gleam Pipeline suggestion")
+    });
+    if let Some(action) = response {
+        apply_code_action(src, &url, &action)
+    } else {
+        panic!("No code action produced by the engine")
+    }
+}
+
 fn apply_code_action(src: &str, url: &Url, action: &lsp_types::CodeAction) -> String {
     match &action.edit {
         Some(WorkspaceEdit { changes, .. }) => match changes {
@@ -79,6 +174,8 @@ fn apply_code_edit(
     let mut result = src.to_string();
     let line_numbers = LineNumbers::new(src);
     let mut offset = 0;
+    dbg!(src);
+
     for (change_url, change) in changes {
         if url != change_url {
             panic!("Unknown url {}", change_url)
@@ -93,7 +190,7 @@ fn apply_code_edit(
             result.replace_range(range, &edit.new_text);
         }
     }
-    result
+    dbg!(result)
 }
 
 #[test]
@@ -147,6 +244,187 @@ pub fn main() {
         expected.replace("%SPACE%", " ")
     )
 }
+
+// #[test]
+// fn test_suggest_pipeline_assignmen_tryout(){
+
+//     // Without Pipeline Operator
+//     let code = "
+// import list
+
+// fn main() {
+//   let x = [1,2,3]
+//   let y =
+//     x
+//     |> list.map(fn(x) { x + 2 }, [])
+// }
+// ";
+
+//     // With Pipeline Operator
+//     let expected = "
+// fn main() {
+//   let x = [1, 2, 3]
+
+//   let z =
+//     x
+//     |> list.map(fn(x) { x * 2 }, [])
+//     |> list.take_while(fn(x) { x < 3 })
+// }
+// ";
+
+
+//     assert_eq!(suggest_pipeline(code, 1), expected);
+// }
+
+// #[test]
+// fn test_suggest_pipeline_assignment1_intermed_var(){
+
+//     // Without Pipeline Operator
+//     let code = "
+// import list
+
+// fn main() {
+//   let x = [1,2,3]
+//   let y = list.map(x, fn(x) {x*2}, [])
+//   let z = list.take_while(y, fn(x) {x < 3})
+
+//   [1,2,3,4]
+// }
+
+// ";
+
+//     // With Pipeline Operator
+//     let expected = "
+// fn main() {
+//   let x = [1, 2, 3]
+
+//   let z =
+//     x
+//     |> list.map(fn(x) { x * 2 }, [])
+//     |> list.take_while(fn(x) { x < 3 })
+// }
+// ";
+
+
+//     assert_eq!(suggest_pipeline(code, 1), expected);
+// }
+
+#[test]
+fn test_suggest_pipeline_assignment_func_chaining(){
+
+    // Without Pipeline Operator
+    let code = "
+import list
+
+fn main() {
+    #(1, 2)
+    let result = list.reverse(list.map([1,2,3], fn(x) {x * 2}))
+}
+
+";
+
+    // With Pipeline Operator
+    let expected = "
+fn main() {
+  let result =
+    [1, 2, 3]
+    |> list.map(fn(x) { x * 2 })
+    |> list.reverse()
+}
+";
+
+    let position_start = Position::new(4, 0);
+    let position_end = Position::new(4, 63);
+
+
+    assert_eq!(suggest_pipeline(code, position_start, position_end), expected);
+}
+
+// #[test]
+// fn test_suggest_pipeline_on_multiple_lines(){
+//     // Without Pipeline Operator
+//     let code = "
+//     import list
+
+//     fn main() {
+//         let init = 1
+        
+//         let x = [1,2,3]
+//         let y = list.map(x, fn(x) {x*2}, [])
+//         let z = list.take_while(y, fn(x) {x < 3})
+//     }
+
+//     ";
+
+//     // With Pipeline Operator
+//     let expected = "
+//     fn main() -> Int {
+//         let init = 1
+        
+//         init
+//         |> double
+//         |> multiplied(4)
+//     }
+    
+//     fn double(in: Int) -> Int {
+//         in * 2
+//     }
+    
+//     fn multiplied(mult: Int, in: Int) -> Int {
+//         in * mult
+//     }
+//     ";
+
+
+//     assert_eq!(suggest_pipeline(code, 1),
+//                expected);
+//     //Maybe also make this pipeline suggestion on line 2 (doubled)?
+//     // assert_eq!(suggest_pipeline(code, 1),
+//     // expected)
+// }
+
+// #[test]
+// fn test_suggest_pipeline_expression(){
+
+//     // Without Pipeline Operator
+// //     let code = "
+// // import list
+
+// // fn main() -> List(int) {
+// //   let x = [1, 2, 3]
+
+// //   x
+// //   |> list.map(fn(x) { x * 2 }, [])
+// //   |> list.take_while(fn(x) { x < 3 })
+// // }
+// // ";
+
+// let code = "
+// import list
+
+// fn main(){
+//     let z = example()
+// }
+
+// fn example() -> List(int) {
+//     [1, 2, 3, 4, 5]
+// }
+// ";
+
+//     // With Pipeline Operator
+//     let expected = "
+// import list
+
+// fn main() -> List(int) {
+//   let x = [1, 2, 3]
+
+//   x
+//   |> list.map(fn(x) { x * 2 }, [])
+//   |> list.take_while(fn(x) { x < 3 })
+// }
+// ";  
+//     assert_eq!(suggest_pipeline(code, 1), expected);
+// }
 
 /* TODO: implement qualified unused location
 #[test]
