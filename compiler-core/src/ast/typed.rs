@@ -445,8 +445,36 @@ impl TypedExpr {
             TypedExpr::String { location, typ, value } => value.to_string(),
             TypedExpr::Block { location, statements } => todo!(),
             TypedExpr::Pipeline { location, assignments, finally } => todo!(),
-            TypedExpr::Var { location, constructor, name } => name.to_string(),
-            TypedExpr::Fn { location, typ, is_capture, args, body, return_annotation } => todo!(),
+            TypedExpr::Var { location, constructor, name } => {
+                name.to_string()
+            },
+            TypedExpr::Fn { location, typ, is_capture, args, body, return_annotation } => {
+                let arg_str = args
+                    .iter()
+                    .map(|arg| {
+                        match &arg.names {
+                            ArgNames::Discard { name } => name.to_string(),
+                            ArgNames::LabelledDiscard { label, name, .. } => name.to_string(),
+                            ArgNames::Named { name } => name.to_string(),
+                            ArgNames::NamedLabelled { name, label, .. } => name.to_string(),
+                        }
+                    })
+                    .collect::<Vec<String>>()
+                    .join(", ");
+
+                let body_str = body
+                    .iter()
+                    .map(|statement| {
+                        match statement{
+                            Statement::Expression(expr) => expr.to_string(),
+                            Statement::Assignment(assign) => todo!(),
+                            Statement::Use(_) => todo!(),
+                        }
+                    })
+                    .collect::<String>();
+
+                format!("fn({}) {{ {} }}", arg_str, body_str)
+            },
             TypedExpr::List { location, typ, elements, tail } => {
                 let mut result = "[".to_string();
 
@@ -465,7 +493,22 @@ impl TypedExpr {
                 result.push_str("]");
                 result
             },
-            TypedExpr::Call { location, typ, fun, args } => {"fn () {}".to_string()},
+            TypedExpr::Call { location, typ, fun, args } => {
+                let fun_str = fun.to_string();
+
+                let args_str = if !args.is_empty() {
+                    let args_str: String = args
+                    .iter()
+                    .map(|arg| format!("{}", arg.value.to_string()))
+                    .collect::<Vec<_>>().join(", ");
+                    format!("({})", args_str)
+                } else {
+                    //no arguments for function
+                    String::from("()")
+                };
+                
+                format!("{}{}", fun_str, args_str)    
+            },
             TypedExpr::BinOp { location, typ, name, left, right } => {
                 format!("{} {} {}",left.to_string(), name.name(), right.to_string())
             },

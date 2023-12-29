@@ -621,6 +621,9 @@ fn gleam_pipeline_suggestions(
     params: &lsp::CodeActionParams,
     actions: &mut Vec<CodeAction>,
 ) {
+
+    dbg!(module);
+
     let uri = &params.text_document.uri;
     let line_numbers = LineNumbers::new(&module.code);
 
@@ -635,32 +638,22 @@ fn gleam_pipeline_suggestions(
     //voor elke functie definitie kijken of er gechained wordt
     for function_def in functions {
         if let Definition::Function(function) = function_def {
-              //in de body van die functie kijken of er een call value als callarg is
+              //in de body van die functie kijken of er call chaining plaatsvind
             if let Some(chains) = detect_possible_pipeline_suggestion(&function.body){
                 for chain in chains {
-                    let translated_string = translate_func_chain_to_pipeline(chain);
-                    edits.extend(build_edits_from_translation(translated_string));
+                    let range = src_span_to_lsp_range(*chain.0, &line_numbers);
+
+                    if range_includes(&params.range, &range){
+                        let translated_chain = translate_func_chain_to_pipeline(chain.1);
+                        edits.push(build_edits_from_translation(range, translated_chain));
+                    }
                 }
             }
         }
     }
 
-    if !edits.is_empty(){
-        CodeActionBuilder::new("Gleam Pipeline suggestion")
-            .kind(lsp_types::CodeActionKind::QUICKFIX)
-            .changes(uri.clone(), edits)
-            .preferred(true)
-            .push_to(actions)
-    }
-
-    //hier de edits bouwen?
-    // let edits: Vec<lsp_types::TextEdit> = functions
-    //     .filter_map(|def| {
-    //         if let Definition::Function(func) = def {
-    //             Some(func.body.iter().filter_map(|s| match s {
-    //                 crate::ast::Statement::Expression(_) => None,
-    //                 crate::ast::Statement::Assignment(assign) => {
-    //                     let range = src_span_to_lsp_range(assign.location, &line_numbers);
+    //only show edits which are hovered
+    // let range = src_span_to_lsp_range(assign.location, &line_numbers);
     //                     if !range_includes(&params.range, &range) {
     //                         None
     //                     } else if let Some(edit) = suggest_pipeline_if_function_chaining(assign) {
@@ -671,28 +664,20 @@ fn gleam_pipeline_suggestions(
     //                     } else {
     //                         None
     //                     }
-    //                 }
-    //                 _ => None,
-    //             }))
-    //         } else {
-    //             None
-    //         }
-    //     })
-    //     .flatten()
-    //     .collect();
 
-    // if edits.len() > 0 {
-    //     CodeActionBuilder::new("Gleam Pipeline suggestion")
-    //         .kind(lsp_types::CodeActionKind::QUICKFIX)
-    //         .changes(uri.clone(), edits)
-    //         .preferred(true)
-    //         .push_to(actions)
-    // }
+    if !edits.is_empty(){
+        CodeActionBuilder::new("Gleam Pipeline suggestion")
+            .kind(lsp_types::CodeActionKind::QUICKFIX)
+            .changes(uri.clone(), edits)
+            .preferred(true)
+            .push_to(actions)
+    }
+
 }
 
-fn detect_possible_pipeline_suggestion<'a>(body: &'a vec1::Vec1<ast::Statement<Arc<Type>, TypedExpr>>) -> Option<Vec<Vec<&'a TypedExpr>>> {
+fn detect_possible_pipeline_suggestion<'a>(body: &'a vec1::Vec1<ast::Statement<Arc<Type>, TypedExpr>>) -> Option<Vec<(&SrcSpan, Vec<&'a TypedExpr>)>> {
 
-    let mut chains_to_be_converted: Vec<Vec<&'a TypedExpr>> = Vec::new();
+    let mut chains_to_be_converted: Vec<(&SrcSpan, Vec<&'a TypedExpr>)> = Vec::new();
 
     for statement in body.iter(){
         match statement {
@@ -700,7 +685,7 @@ fn detect_possible_pipeline_suggestion<'a>(body: &'a vec1::Vec1<ast::Statement<A
             ast::Statement::Assignment(assignment) => {
                 let mut func_chain = Vec::new();
                 retrieve_call_chain(&assignment.value.as_ref(), &mut func_chain);
-                chains_to_be_converted.push(func_chain);
+                chains_to_be_converted.push((&assignment.location, func_chain));
             },
             ast::Statement::Use(_) => todo!(),
         }
@@ -708,7 +693,7 @@ fn detect_possible_pipeline_suggestion<'a>(body: &'a vec1::Vec1<ast::Statement<A
 
     dbg!(&chains_to_be_converted);
 
-    let result:Vec<&Vec<&TypedExpr>> = chains_to_be_converted.iter().filter(|chain| chain.len() > 1).collect();
+    let result: Vec<_> = chains_to_be_converted.iter().filter(|chain| chain.1.len() > 1).collect();
 
     if result.is_empty(){
         None
@@ -722,7 +707,6 @@ fn translate_func_chain_to_pipeline(
 ) -> String {
     chains.reverse();
     let mut pipeline_format_parts: Vec<String> = Vec::new();
-    let mut location_expr_callarg_to_be_deleted: Option<&SrcSpan> = None;
     let mut previous_expr: Option<&TypedExpr> = None;
 
     if let Some(&chain) = chains.first() {
@@ -780,16 +764,16 @@ fn remove_expr_from_arg_by_location(parent: &TypedExpr, location_arg:&SrcSpan ) 
         location,
         typ,
         fun,
-        mut args,
+        args,
     } = parent.clone()
     {
         let new_args = args
             .iter()
             .filter_map(|arg| {
                 if arg.location.start != location_arg.start || arg.location.end != location_arg.end {
-                    Some(arg.clone()) // Keep the arguments whose location doesn't match
+                    Some(arg.clone())
                 } else {
-                    None // Discard the argument whose location matches
+                    None 
                 }
             })
             .collect();
@@ -806,56 +790,14 @@ fn remove_expr_from_arg_by_location(parent: &TypedExpr, location_arg:&SrcSpan ) 
     }
 }
 
-// fn translate_callarg_to_string(callarg: &CallArg<TypedExpr>) -> String {
-//     &callarg.value
-// }
-// fn translate_expr_to_string(
-//     expr: &TypedExpr
-// ) -> String {
-    // match expr{
-    //     TypedExpr::Int { location, typ, value } => todo!(),
-    //     TypedExpr::Float { location, typ, value } => todo!(),
-    //     TypedExpr::String { location, typ, value } => todo!(),
-    //     TypedExpr::Block { location, statements } => todo!(),
-    //     TypedExpr::Pipeline { location, assignments, finally } => todo!(),
-    //     TypedExpr::Var { location, constructor, name } => todo!(),
-    //     TypedExpr::Fn { location, typ, is_capture, args, body, return_annotation } => todo!(),
-    //     TypedExpr::List { location, typ, elements, tail } => {
-    //         let mut translation: String = "[".into();
-
-    //         for (index, element) in elements.iter().enumerate() {
-    //             if index > 0 {
-    //                 translation.push_str(", ");
-    //             }
-    //             translation.push_str(&element.to_string());
-    //         }
-        
-    //         translation.push(']');
-        
-    //         translation
-
-    //     },
-    //     TypedExpr::Call { location, typ, fun, args } => "fn () {}".into(),
-    //     TypedExpr::BinOp { location, typ, name, left, right } => todo!(),
-    //     TypedExpr::Case { location, typ, subjects, clauses } => todo!(),
-    //     TypedExpr::RecordAccess { location, typ, label, index, record } => todo!(),
-    //     TypedExpr::ModuleSelect { location, typ, label, module_name, module_alias, constructor } => todo!(),
-    //     TypedExpr::Tuple { location, typ, elems } => todo!(),
-    //     TypedExpr::TupleIndex { location, typ, index, tuple } => todo!(),
-    //     TypedExpr::Todo { location, message, type_ } => todo!(),
-    //     TypedExpr::Panic { location, message, type_ } => todo!(),
-    //     TypedExpr::BitArray { location, typ, segments } => todo!(),
-    //     TypedExpr::RecordUpdate { location, typ, spread, args } => todo!(),
-    //     TypedExpr::NegateBool { location, value } => todo!(),
-    //     TypedExpr::NegateInt { location, value } => todo!(),
-    // }
-// }
-
 fn build_edits_from_translation(
-    translated_chains: String,
-) -> Vec<lsp_types::TextEdit> {
-    // Implementation goes here
-    todo!()
+    range: lsp_types::Range,
+    translated_chain: String,
+) -> lsp_types::TextEdit {
+    lsp_types::TextEdit {
+        range,
+        new_text: translated_chain,
+    }
 }
 
 fn retrieve_call_chain<'a>(expr: &'a TypedExpr, func_chain: &mut Vec<&'a TypedExpr>) {
@@ -869,79 +811,7 @@ fn retrieve_call_chain<'a>(expr: &'a TypedExpr, func_chain: &mut Vec<&'a TypedEx
                 false
             }
         }){
-            dbg!(&callarg);
             retrieve_call_chain(&callarg.value, func_chain);
         }
     }
 }
-
-fn suggest_pipeline_if_function_chaining(
-    assign: &crate::ast::Assignment<Arc<Type>, TypedExpr>,
-) -> Option<String> {
-    if let TypedExpr::Call {
-        location,
-        typ,
-        fun,
-        args,
-    } = assign.value.as_ref()
-    {
-        Some("|>".into())
-    } else {
-        None
-    }
-}
-
-fn detect_func_chaining_in_assign(
-    assign: &crate::ast::Assignment<Arc<Type>, TypedExpr>,
-) -> Option<&crate::ast::Assignment<Arc<Type>, TypedExpr>> {
-    
-    if let TypedExpr::Call {
-        location: _,
-        typ: _,
-        fun: _,
-        args,
-    } = assign.value.as_ref()
-    {
-        if args.iter().any(|arg| matches!(arg.value, TypedExpr::Call { .. })) {
-            Some(assign)
-        } else{
-            None
-        }
-    } else {
-        None
-    }
-}
-
-// fn func_chaining_in_func_arg(call: &TypedExpr, mut call_chain: Vec<TypedExpr>) -> Vec<TypedExpr> {
-//     if let TypedExpr::Call {
-//         location,
-//         typ,
-//         fun,
-//         args,
-//     } = call
-//     {
-//         if args.iter().any(|arg| {
-//             if let TypedExpr::Call {
-//                 location,
-//                 typ,
-//                 fun,
-//                 args,
-//             } = &arg.value
-//             {
-//                 true
-//             } else {
-//                 false
-//             }
-//         }) {
-//             // Add the current call to the call_chain vector
-//             call_chain.push(call.clone());
-
-//             // Recursively continue with each argument
-//             for arg in args {
-//                 call_chain = func_chaining_in_func_arg(&arg.value, call_chain);
-//             }
-//         }
-//     }
-
-//     call_chain
-// }
