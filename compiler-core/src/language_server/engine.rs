@@ -635,13 +635,12 @@ fn gleam_pipeline_suggestions(
 
     let mut edits = Vec::new();
 
-    //voor elke functie definitie kijken of er gechained wordt
+    //Check each func definition for func_chaining in body
     for function_def in functions {
         if let Definition::Function(function) = function_def {
-              //in de body van die functie kijken of er call chaining plaatsvind
             if let Some(chains) = detect_possible_pipeline_suggestion(&function.body){
                 for chain in chains {
-                    let range = src_span_to_lsp_range(*chain.0, &line_numbers);
+                    let range = src_span_to_lsp_range(chain.0, &line_numbers);
 
                     if range_includes(&params.range, &range){
                         let translated_chain = translate_func_chain_to_pipeline(chain.1);
@@ -651,19 +650,6 @@ fn gleam_pipeline_suggestions(
             }
         }
     }
-
-    //only show edits which are hovered
-    // let range = src_span_to_lsp_range(assign.location, &line_numbers);
-    //                     if !range_includes(&params.range, &range) {
-    //                         None
-    //                     } else if let Some(edit) = suggest_pipeline_if_function_chaining(assign) {
-    //                         Some(lsp_types::TextEdit {
-    //                             range,
-    //                             new_text: edit,
-    //                         })
-    //                     } else {
-    //                         None
-    //                     }
 
     if !edits.is_empty(){
         CodeActionBuilder::new("Gleam Pipeline suggestion")
@@ -675,25 +661,32 @@ fn gleam_pipeline_suggestions(
 
 }
 
-fn detect_possible_pipeline_suggestion<'a>(body: &'a vec1::Vec1<ast::Statement<Arc<Type>, TypedExpr>>) -> Option<Vec<(&SrcSpan, Vec<&'a TypedExpr>)>> {
+fn detect_possible_pipeline_suggestion<'a>(body: &'a vec1::Vec1<ast::Statement<Arc<Type>, TypedExpr>>) -> Option<Vec<(SrcSpan, Vec<&'a TypedExpr>)>> {
 
-    let mut chains_to_be_converted: Vec<(&SrcSpan, Vec<&'a TypedExpr>)> = Vec::new();
+    let mut chains_to_be_converted: Vec<(SrcSpan, Vec<&'a TypedExpr>)> = Vec::new();
 
+    //kijken of er func_chaining plaatsvind in de argumenten
     for statement in body.iter(){
         match statement {
-            ast::Statement::Expression(expression) => todo!(),
+            ast::Statement::Expression(expression) => (),
             ast::Statement::Assignment(assignment) => {
                 let mut func_chain = Vec::new();
                 retrieve_call_chain(&assignment.value.as_ref(), &mut func_chain);
-                chains_to_be_converted.push((&assignment.location, func_chain));
+
+                let location_start_func_chain = func_chain.first().unwrap().location();
+
+                chains_to_be_converted.push((location_start_func_chain, func_chain));
             },
-            ast::Statement::Use(_) => todo!(),
+            ast::Statement::Use(_) => (),
         }
     }
 
     dbg!(&chains_to_be_converted);
 
     let result: Vec<_> = chains_to_be_converted.iter().filter(|chain| chain.1.len() > 1).collect();
+
+
+    //kijken of er func_chaining plaatsvind middels intermediate variables
 
     if result.is_empty(){
         None
@@ -724,6 +717,7 @@ fn translate_func_chain_to_pipeline(
                 } else{
                     //call expressie heeft GEEN callargumenten, dan moet de gehele call als input gebrukt worden.
                     pipeline_format_parts.push(chain.to_string());
+                    previous_expr = Some(chain);
                 }
             },
             _ => todo!()
@@ -742,15 +736,14 @@ fn translate_func_chain_to_pipeline(
 }
 
 fn format_to_pipeline(pipeline_format_parts: Vec<String>) -> String {
-    // let formatted_to_pipeline = pipeline_format_parts.join("|>");
     let formatted_to_pipeline: String = pipeline_format_parts
     .iter()
     .enumerate()
     .map(|(index, part)| {
         if index > 0 {
-            format!("\n|>{}", part)
+            format!("|> {}", part)
         } else{
-            part.to_string()
+            format!("\n{}", part.to_string())
         }
     })
     .collect::<Vec<String>>()

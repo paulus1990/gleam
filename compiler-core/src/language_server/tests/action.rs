@@ -246,37 +246,6 @@ pub fn main() {
 }
 
 // #[test]
-// fn test_suggest_pipeline_assignmen_tryout(){
-
-//     // Without Pipeline Operator
-//     let code = "
-// import list
-
-// fn main() {
-//   let x = [1,2,3]
-//   let y =
-//     x
-//     |> list.map(fn(x) { x + 2 }, [])
-// }
-// ";
-
-//     // With Pipeline Operator
-//     let expected = "
-// fn main() {
-//   let x = [1, 2, 3]
-
-//   let z =
-//     x
-//     |> list.map(fn(x) { x * 2 }, [])
-//     |> list.take_while(fn(x) { x < 3 })
-// }
-// ";
-
-
-//     assert_eq!(suggest_pipeline(code, 1), expected);
-// }
-
-// #[test]
 // fn test_suggest_pipeline_assignment1_intermed_var(){
 
 //     // Without Pipeline Operator
@@ -317,24 +286,61 @@ fn test_suggest_pipeline_assignment_func_chaining(){
 import list
 
 fn main() {
-    #(1, 2)
-    let result = list.reverse(list.map([1,2,3], fn(x) {x * 2}))
+  let result = list.reverse(list.map([1,2,3], fn(x) {x * 2}))
 }
-
 ";
-
     // With Pipeline Operator
     let expected = "
+import list
+
 fn main() {
-  let result =
-    [1, 2, 3]
-    |> list.map(fn(x) { x * 2 })
-    |> list.reverse()
+  let result = 
+[1, 2, 3]
+|> list.map(fn(x) { x * 2 })
+|> list.reverse()
 }
 ";
 
     let position_start = Position::new(4, 0);
-    let position_end = Position::new(4, 63);
+    let position_end = Position::new(4, 61);
+
+
+    assert_eq!(suggest_pipeline(code, position_start, position_end), expected);
+}
+
+#[test]
+fn test_suggest_pipeline_assignment_func_chaining_func_as_input_pipeline(){
+
+    // Without Pipeline Operator
+    let code = "
+import list
+
+fn main() {
+  let result = list.reverse(list.map(buildlist(), fn(x) {x * 2}))
+}
+
+fn buildlist() -> List(Int) {
+  [1, 2, 3]
+}
+";
+    // With Pipeline Operator
+    let expected = "
+import list
+
+fn main() {
+  let result = 
+buildlist()
+|> list.map(fn(x) { x * 2 })
+|> list.reverse()
+}
+
+fn buildlist() -> List(Int) {
+  [1, 2, 3]
+}
+";
+
+    let position_start = Position::new(4, 0);
+    let position_end = Position::new(4, 61);
 
 
     assert_eq!(suggest_pipeline(code, position_start, position_end), expected);
