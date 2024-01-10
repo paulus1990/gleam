@@ -1,7 +1,7 @@
 use crate::{
     ast::{
         self, Arg, Definition, Function, Import, ModuleConstant, SrcSpan, TypedDefinition,
-        TypedExpr, TypedPattern,
+        TypedExpr, TypedPattern, Statement, Assignment, CallArg,
     },
     build::{Located, Module},
     config::PackageConfig,
@@ -18,7 +18,8 @@ use camino::Utf8PathBuf;
 use ecow::EcoString;
 use lsp::CodeAction;
 use lsp_types::{self as lsp, Hover, HoverContents, MarkedString, Url};
-use std::sync::Arc;
+use spdx::Expression;
+use std::{sync::Arc, ops::Deref, cell::RefMut};
 use strum::IntoEnumIterator;
 
 use super::{
@@ -570,10 +571,16 @@ fn hover_for_expression(expression: &TypedExpr, line_numbers: LineNumbers) -> Ho
 }
 
 // Check if the inner range is included in the outer range.
+// fn range_includes(outer: &lsp_types::Range, inner: &lsp_types::Range) -> bool {
+//     (outer.start >= inner.start && outer.start <= inner.end)
+//         || (outer.end >= inner.start && outer.end <= inner.end)
+// }
+
+// Check if the inner range is included in the outer range.
 fn range_includes(outer: &lsp_types::Range, inner: &lsp_types::Range) -> bool {
-    (outer.start >= inner.start && outer.start <= inner.end)
-        || (outer.end >= inner.start && outer.end <= inner.end)
+    inner.start >= outer.start && inner.end <= outer.end
 }
+
 
 fn code_action_unused_imports(
     module: &Module,
@@ -621,9 +628,7 @@ fn gleam_pipeline_suggestions(
     params: &lsp::CodeActionParams,
     actions: &mut Vec<CodeAction>,
 ) {
-
-    dbg!(module);
-
+    //dbg!(module);
     let uri = &params.text_document.uri;
     let line_numbers = LineNumbers::new(&module.code);
 
@@ -635,19 +640,73 @@ fn gleam_pipeline_suggestions(
 
     let mut edits = Vec::new();
 
-    //Check each func definition for func_chaining in body
+    //Check each func_body definition for possible pipeline suggestions
     for function_def in functions {
         if let Definition::Function(function) = function_def {
-            if let Some(chains) = detect_possible_pipeline_suggestion(&function.body){
-                for chain in chains {
-                    let range = src_span_to_lsp_range(chain.0, &line_numbers);
 
+            let (statements_consumed, inlined_statements) = inline_statements(&function.body);
+
+            //Create edit to remove the statements which are converted to inline values
+            for span_statement in statements_consumed{
+                let range = src_span_to_lsp_range(span_statement, &line_numbers);
+                if range_includes(&params.range, &range){
+                    edits.push(lsp_types::TextEdit {
+                        range,
+                        new_text: "".into(),
+                    });
+                }
+            }
+
+            //Create Pipeline edit
+             if let Some(chains) = detect_pipeline(&inlined_statements){
+                //DESTRUCTURE TUPLE
+                for chain in chains {
+
+                    let statement_for_pipeline = chain.0;
+
+                    //let range = determine_range_to_be_edited(statement_for_pipeline.location(), statement_for_pipeline);
+
+                    let range = src_span_to_lsp_range(statement_for_pipeline.location(), &line_numbers);
                     if range_includes(&params.range, &range){
+                        let assignment_string = translate_statement_to_string(statement_for_pipeline);
                         let translated_chain = translate_func_chain_to_pipeline(chain.1);
-                        edits.push(build_edits_from_translation(range, translated_chain));
+                        edits.push(build_edits_from_translation(range, format!("{}{}", assignment_string, translated_chain)));
                     }
                 }
             }
+
+            // let assignments: Vec<&Assignment<Arc<Type>, TypedExpr>> = get_assignments(function);
+            // let expressions:Vec<&TypedExpr> = get_expressions(function);
+            // let (startingpoint_pipeline, inlined_assignments) = try_inline_assignments(assignments);
+
+            // if let Some(chains) = detect_pipeline_assignments(&inlined_assignments){
+            //     for chain in chains {
+
+            //         let assignment_for_pipeline = chain.0;
+
+            //         let range = determine_range_to_be_edited(startingpoint_pipeline, assignment_for_pipeline);
+
+            //         let range = src_span_to_lsp_range(range, &line_numbers);
+            //         if range_includes(&params.range, &range){
+            //             let assignment_string = translate_assignment_to_string(assignment_for_pipeline);
+            //             let translated_chain = translate_func_chain_to_pipeline(chain.1);
+            //             edits.push(build_edits_from_translation(range, format!("{}{}", assignment_string, translated_chain)));
+            //         }
+            //     }
+            // }
+            
+
+            // //NOG KIJKEN NAAR STARTINGPOINT E.D. --> DIT IS NU ANDERS DAN BIJ ASSIGNMENTS
+            // if let Some(chains) = detect_pipeline_suggestion_expression(&expressions){
+            //     for chain in chains {
+            //         let range = src_span_to_lsp_range(chain.0, &line_numbers);
+
+            //         if range_includes(&params.range, &range){
+            //             let translated_chain = translate_func_chain_to_pipeline(chain.1);
+            //             edits.push(build_edits_from_translation(range, translated_chain));
+            //         }
+            //     }
+            // }
         }
     }
 
@@ -661,32 +720,324 @@ fn gleam_pipeline_suggestions(
 
 }
 
-fn detect_possible_pipeline_suggestion<'a>(body: &'a vec1::Vec1<ast::Statement<Arc<Type>, TypedExpr>>) -> Option<Vec<(SrcSpan, Vec<&'a TypedExpr>)>> {
+fn inline_statements(statements: &vec1::Vec1<Statement<Arc<Type>, TypedExpr>>) -> (Vec<SrcSpan>, Vec<Statement<Arc<Type>, TypedExpr>>) {
+    let mut inlined_statements = Vec::new();
+    let mut pos_consumed_statements = Vec::new();
+    
+    for statement in statements.iter(){
+        inline_statement(statement, &mut inlined_statements, &mut pos_consumed_statements)
+        // match statement{
+        //     Statement::Expression(expr) => inline_arg(expr, statements, &mut assignments_converted_to_inline),
+        //     Statement::Assignment(assign) => inline_arg(assign.value.as_mut(), statements, &mut assignments_converted_to_inline),
+        //     Statement::Use(_) => todo!(),
+        // }
+    }
+
+    //BETER SCHRIJVEN!!!
+    // Als er assignments zijn gebruikt om te inlinen, dan moeten ze ook weggehaald worden uit de code.
+    // om die reden de laagste location.start opzoeken en daar de edit al laten beginnen.
+    // let lowest_start_assignment: Option<SrcSpan> = assignments_converted_to_inline
+    // .iter()
+    // .map(|assign| assign.location)
+    // .min_by_key(|&location| location.start);
+
+    (pos_consumed_statements, inlined_statements)
+}
+
+fn inline_statement(statement: &Statement<Arc<Type>, TypedExpr>, new:&mut Vec<Statement<Arc<Type>, TypedExpr>>, positions_to_be_emptied: &mut Vec<SrcSpan>) {
+    let mut clone = statement.clone();
+
+    let mut expr = match &mut clone{
+        Statement::Expression(e) => e,
+        Statement::Assignment(a) => &mut a.value,
+        _ => todo!(),
+    };
+
+    do_the_inlining(expr, new, positions_to_be_emptied); 
+
+    new.push(clone);
+}
+
+fn do_the_inlining(expr: &mut TypedExpr, new: &mut Vec<Statement<Arc<Type>, TypedExpr>>, position_to_be_emptied: &mut Vec<SrcSpan>) {
+    if let TypedExpr::Call { location, typ, fun, args } = expr{
+        for arg in args{
+            if let TypedExpr::Call { .. } = &mut arg.value{
+                do_the_inlining(&mut arg.value, new, position_to_be_emptied)
+            }
+
+            if let TypedExpr::Var { location: _, constructor, name: _ } = &mut arg.value{
+                if let ValueConstructorVariant::LocalVariable { location } = &mut constructor.variant{
+                    let found = new.iter().position(|statement| {
+                        if let Statement::Assignment(assignment) = statement{
+                           let assign_location = assignment.pattern.location();
+                           assign_location.start == location.start && assign_location.end == location.end
+                        } else {
+                            false
+                        }
+                    });
+
+                    if let Some(index) = found{
+                        let statement_to_be_inlined = new.remove(index);
+                        position_to_be_emptied.push(statement_to_be_inlined.location());
+                        if let Statement::Assignment(expr_to_be_inlined) = statement_to_be_inlined{
+                            arg.value = *expr_to_be_inlined.value
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+
+// fn inline_arg<'a>(expr: &TypedExpr, statements: &'a vec1::Vec1<Statement<Arc<Type>, TypedExpr>>, assignments_converted_to_inline: &mut Vec<&'a Assignment<Arc<Type>, TypedExpr>>){
+//     if let TypedExpr::Call { location, typ, fun, args } = expr
+//     {
+//         for callarg in args{
+
+//             if let TypedExpr::Call { location, typ, fun, args } = &callarg.value{
+//                 // inline_arg(&mut callarg.value, statements, assignments_converted_to_inline);
+//             }
+
+//             if let TypedExpr::Var { location, constructor, name } = &callarg.value{
+
+//                 if let ValueConstructorVariant::LocalVariable { location } = &constructor.variant{
+//                     let res = statements.iter()
+//                             .find_map(|statement| {
+//                                 if let Statement::Assignment(assignment) = statement {
+//                                     let assign_location = assignment.pattern.location();
+//                                     if assign_location.start == location.start && assign_location.end == location.end {
+//                                         Some(assignment)
+//                                     } else {
+//                                         None
+//                                     }
+//                                 } else {
+//                                     None
+//                                 }
+//                             });
+
+//                     if let Some(assign) = res{
+//                         callarg.value = *assign.value.clone();
+//                         assignments_converted_to_inline.push(&assign);
+//                     }
+//                 }
+//             }
+//         }
+//     }
+// }
+
+fn determine_range_to_be_edited(startingpoint_pipeline: Option<SrcSpan>, statement_for_pipeline: &Statement<Arc<Type>, TypedExpr>) -> SrcSpan {
+
+    let statement_srcspan = match statement_for_pipeline{
+        Statement::Expression(expr) => expr.location(),
+        Statement::Assignment(assign) => assign.location,
+        Statement::Use(_) => todo!(),
+    };
+
+    if let Some(start) = startingpoint_pipeline{
+        SrcSpan{ start: start.start, end: statement_srcspan.end }
+    } else {
+        SrcSpan{ start: statement_srcspan.start, end: statement_srcspan.end }
+    }
+}
+
+// fn determine_range_to_be_edited(startingpoint_pipeline: Option<SrcSpan>, assignment_for_pipeline: &Assignment<Arc<Type>, TypedExpr>) -> SrcSpan {
+//     if let Some(start) = startingpoint_pipeline{
+//         SrcSpan{ start: start.start, end: assignment_for_pipeline.location.end }
+//     } else {
+//         SrcSpan{ start: assignment_for_pipeline.location.start, end: assignment_for_pipeline.location.end }
+//     }
+// }
+
+fn translate_statement_to_string(statement: &Statement<Arc<Type>, TypedExpr>) -> String {
+    if let Statement::Assignment(assign) = statement{
+        match &assign.pattern{
+            ast::Pattern::Int { location, value } => todo!(),
+            ast::Pattern::Float { location, value } => todo!(),
+            ast::Pattern::String { location, value } => todo!(),
+            ast::Pattern::Var { location, name, type_ } => format!("let {} =\n", name),
+            ast::Pattern::VarUsage { location, name, constructor, type_ } => todo!(),
+            ast::Pattern::Assign { name, location, pattern } => todo!(),
+            ast::Pattern::Discard { name, location, type_ } => todo!(),
+            ast::Pattern::List { location, elements, tail, type_ } => todo!(),
+            ast::Pattern::Constructor { location, name, arguments, module, constructor, with_spread, type_ } => todo!(),
+            ast::Pattern::Tuple { location, elems } => todo!(),
+            ast::Pattern::BitArray { location, segments } => todo!(),
+            ast::Pattern::Concatenate { location, left_location, left_side_assignment, right_location, left_side_string, right_side_assignment } => todo!(),
+        }
+    } else{
+        "".into()
+    }
+}
+
+// fn try_inline_assignments(assignments: Vec<&Assignment<Arc<Type>, TypedExpr>>) -> (Option<SrcSpan>, Vec<Assignment<Arc<Type>, TypedExpr>>) {
+//     //misschien hier een nieuwe vector van assignments bouwen (deze clonen van originele assignments)
+//     //de geclonede assignments proberen te inlinen
+//     let mut cloned_assignments: Vec<Assignment<Arc<Type>, TypedExpr>> =
+//         assignments.iter().cloned().map(|assignment| assignment.clone()).collect();
+
+//     let mut assignments_converted_to_inline: Vec<&Assignment<Arc<Type>, TypedExpr>> = Vec::new();
+    
+//     for assignment in cloned_assignments.iter_mut(){
+        
+//         inline_arg(&mut assignment.value, &assignments, &mut assignments_converted_to_inline);
+//     }
+
+//     //BETER SCHRIJVEN!!!
+//     // Als er assignments zijn gebruikt om te inlinen, dan moeten ze ook weggehaald worden uit de code.
+//     // om die reden de laagste location.start opzoeken en daar de edit al laten beginnen.
+//     let lowest_start_assignment: Option<SrcSpan> = assignments_converted_to_inline
+//     .iter()
+//     .map(|assign| assign.location)
+//     .min_by_key(|&location| location.start);
+
+//     for assign in assignments_converted_to_inline{
+//         let found = cloned_assignments.iter().position(|a|{
+//             a.location.start == assign.location.start &&
+//             a.location.end == assign.location.end
+//         });
+        
+//         if let Some(index) = found {
+//             let _ = cloned_assignments.remove(index);
+//         }
+//     }
+    
+//     (lowest_start_assignment, cloned_assignments)
+
+// }
+
+
+
+// fn inline_arg<'a>(expr: &mut TypedExpr, assignments: &Vec<&'a Assignment<Arc<Type>, TypedExpr>>, assignments_converted_to_inline: &mut Vec<&'a Assignment<Arc<Type>, TypedExpr>>){
+
+//     //Call
+//     //check in args van die call voor var en inline die
+//     //check in args van die call voor call en roep daar deze functie recursief voor aan
+
+//     if let TypedExpr::Call { location, typ, fun, args } = expr
+//     {
+//         for callarg in args{
+//             if let TypedExpr::Var { location, constructor, name } = &callarg.value{
+
+//                 if let ValueConstructorVariant::LocalVariable { location } = &constructor.variant{
+//                     let res = assignments.iter()
+//                         .find(|assign| {
+//                             let assign_location = assign.pattern.location();
+//                             assign_location.start == location.start && assign_location.end == location.end
+//                         });
+        
+//                     if let Some(assign) = res{
+//                         callarg.value = *assign.value.clone();
+//                         assignments_converted_to_inline.push(&assign);
+//                     }
+//                 }
+//             }
+    
+//             if let TypedExpr::Call { location, typ, fun, args } = &callarg.value{
+//                 inline_arg(&mut callarg.value, assignments, assignments_converted_to_inline);
+//             }
+//         }
+//     }
+// }
+
+fn get_assignments(function: &Function<Arc<Type>, TypedExpr>) -> Vec<&Assignment<Arc<Type>, TypedExpr>> {
+    let mut assignments: Vec<&Assignment<Arc<Type>, TypedExpr>> = Vec::new();
+
+    for statement in &function.body{
+        if let Statement::Assignment(assignment) = statement{
+            assignments.push(assignment);
+        }
+    }
+
+    assignments
+}
+
+fn get_expressions(function: &Function<Arc<Type>, TypedExpr>) -> Vec<&TypedExpr> {
+    let mut expressions: Vec<&TypedExpr> = Vec::new();
+
+    for statement in &function.body{
+        if let Statement::Expression(expression) = statement{
+            expressions.push(expression);
+        }
+    }
+
+    expressions
+}
+
+fn detect_pipeline(inlined_statements: &Vec<Statement<Arc<Type>, TypedExpr>>) -> Option<Vec<(&Statement<Arc<Type>, TypedExpr>, Vec<&TypedExpr>)>> {
+
+    //WAAROM EEN TUPLE???
+    let mut chains_to_be_converted: Vec<(&Statement<Arc<Type>, TypedExpr>, Vec<&TypedExpr>)> = Vec::new();
+
+    //kijken of er func_chaining plaatsvind in de argumenten
+    for statement in inlined_statements{
+        let mut func_chain: Vec<&TypedExpr> = Vec::new();
+
+        match statement{
+            Statement::Expression(expr) => retrieve_call_chain(expr, &mut func_chain),
+            Statement::Assignment(assign) => retrieve_call_chain(&assign.value, &mut func_chain),
+            Statement::Use(_) => todo!(),
+        }
+
+        if !func_chain.is_empty() {
+            chains_to_be_converted.push((statement, func_chain));
+        }
+    }
+
+    let result: Vec<_> = chains_to_be_converted.iter().filter(|chain| chain.1.len() > 1).collect();
+
+    if result.is_empty(){
+        None
+    } else{
+        Some(chains_to_be_converted)
+    }
+}
+
+fn detect_pipeline_assignments<'a>(assignments: &Vec<Assignment<Arc<Type>, TypedExpr>>) -> Option<Vec<(&Assignment<Arc<Type>, TypedExpr>, Vec<&TypedExpr>)>> {
+
+    let mut chains_to_be_converted: Vec<(&Assignment<Arc<Type>, TypedExpr>, Vec<&TypedExpr>)> = Vec::new();
+
+    //kijken of er func_chaining plaatsvind in de argumenten
+    for assignment in assignments{
+        let mut func_chain: Vec<&TypedExpr> = Vec::new();
+
+        retrieve_call_chain(assignment.value.as_ref(), &mut func_chain);
+
+        if !func_chain.is_empty() {
+            //let location_start_func_chain = func_chain.first().unwrap().location().end;
+
+            chains_to_be_converted.push((assignment, func_chain));
+        }
+    }
+
+    let result: Vec<_> = chains_to_be_converted.iter().filter(|chain| chain.1.len() > 1).collect();
+
+    if result.is_empty(){
+        None
+    } else{
+        Some(chains_to_be_converted)
+    }
+}
+
+fn detect_pipeline_suggestion_expression<'a>(expressions: &'a Vec<&TypedExpr>) -> Option<Vec<(SrcSpan, Vec<&'a TypedExpr>)>> {
 
     let mut chains_to_be_converted: Vec<(SrcSpan, Vec<&'a TypedExpr>)> = Vec::new();
 
     //kijken of er func_chaining plaatsvind in de argumenten
-    for statement in body.iter(){
-        match statement {
-            ast::Statement::Expression(expression) => (),
-            ast::Statement::Assignment(assignment) => {
-                let mut func_chain = Vec::new();
-                retrieve_call_chain(&assignment.value.as_ref(), &mut func_chain);
+    for expression in expressions{
+        let mut func_chain = Vec::new();
 
-                let location_start_func_chain = func_chain.first().unwrap().location();
+        retrieve_call_chain(expression, &mut func_chain);
 
-                chains_to_be_converted.push((location_start_func_chain, func_chain));
-            },
-            ast::Statement::Use(_) => (),
+        if !func_chain.is_empty() {
+            let location_start_func_chain = func_chain.first().unwrap().location();
+
+            chains_to_be_converted.push((location_start_func_chain, func_chain));
         }
     }
-
-    dbg!(&chains_to_be_converted);
-
+    
     let result: Vec<_> = chains_to_be_converted.iter().filter(|chain| chain.1.len() > 1).collect();
-
-
-    //kijken of er func_chaining plaatsvind middels intermediate variables
 
     if result.is_empty(){
         None
@@ -700,24 +1051,20 @@ fn translate_func_chain_to_pipeline(
 ) -> String {
     chains.reverse();
     let mut pipeline_format_parts: Vec<String> = Vec::new();
-    let mut previous_expr: Option<&TypedExpr> = None;
 
     if let Some(&chain) = chains.first() {
-
         match chain{
             TypedExpr::Call { location, typ, fun, args } => {
 
                 if let Some(callarg) = args.first() {
                     //call expressie heeft WEL calargumenten, gebruik dan het eerste argument om aan te wenden als input pipeline
                     pipeline_format_parts.push(callarg.value.to_string());
-                    let skinned_expr = remove_expr_from_arg_by_location(chain, &callarg.location);
+                    let skinned_expr = remove_first_arg(chain);
                     pipeline_format_parts.push(skinned_expr.to_string());
-                    previous_expr = Some(chain);
                     
                 } else{
                     //call expressie heeft GEEN callargumenten, dan moet de gehele call als input gebrukt worden.
                     pipeline_format_parts.push(chain.to_string());
-                    previous_expr = Some(chain);
                 }
             },
             _ => todo!()
@@ -727,9 +1074,10 @@ fn translate_func_chain_to_pipeline(
 
     for chain in chains.iter().skip(1) {
         //remove expr from callarg 
-        let skinned_expr = remove_expr_from_arg_by_location(&chain, &previous_expr.unwrap().location());
+        let skinned_expr = remove_first_arg(&chain);
+
+        dbg!(&skinned_expr);
         pipeline_format_parts.push(skinned_expr.to_string());
-        previous_expr = Some(chain);
     }
 
     dbg!(format_to_pipeline(pipeline_format_parts))
@@ -743,16 +1091,19 @@ fn format_to_pipeline(pipeline_format_parts: Vec<String>) -> String {
         if index > 0 {
             format!("|> {}", part)
         } else{
-            format!("\n{}", part.to_string())
+            format!("{}", part.to_string())
         }
     })
     .collect::<Vec<String>>()
     .join("\n");
 
-    dbg!(formatted_to_pipeline)
+    formatted_to_pipeline
+    //String::from("")
 }
 
-fn remove_expr_from_arg_by_location(parent: &TypedExpr, location_arg:&SrcSpan ) -> TypedExpr {
+fn remove_first_arg(parent: &TypedExpr) -> TypedExpr {
+    //ombouwen naar elke keer het eerste argument eruit halen
+    dbg!(parent);
     if let TypedExpr::Call {
         location,
         typ,
@@ -760,16 +1111,7 @@ fn remove_expr_from_arg_by_location(parent: &TypedExpr, location_arg:&SrcSpan ) 
         args,
     } = parent.clone()
     {
-        let new_args = args
-            .iter()
-            .filter_map(|arg| {
-                if arg.location.start != location_arg.start || arg.location.end != location_arg.end {
-                    Some(arg.clone())
-                } else {
-                    None 
-                }
-            })
-            .collect();
+        let new_args = args.iter().skip(1).cloned().collect();
 
         TypedExpr::Call {
             location,
@@ -807,4 +1149,17 @@ fn retrieve_call_chain<'a>(expr: &'a TypedExpr, func_chain: &mut Vec<&'a TypedEx
             retrieve_call_chain(&callarg.value, func_chain);
         }
     }
+}
+
+fn find_assignment_with_lowest_start<'a>(
+    assignments: &'a Vec<&Assignment<Arc<Type>, TypedExpr>>,
+) -> Option<&'a Assignment<Arc<Type>, TypedExpr>> {
+    assignments.iter().fold(None, |min_assignment, current_assignment| {
+        match min_assignment {
+            Some(min) if current_assignment.location.start < min.location.start => {
+                Some(current_assignment)
+            }
+            _ => Some(min_assignment.unwrap_or(current_assignment)),
+        }
+    })
 }

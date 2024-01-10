@@ -246,7 +246,7 @@ pub fn main() {
 }
 
 // #[test]
-// fn test_suggest_pipeline_assignment1_intermed_var(){
+// fn PLAYAROUND_suggest_pipeline_assignment_func_chaining(){
 
 //     // Without Pipeline Operator
 //     let code = "
@@ -254,28 +254,26 @@ pub fn main() {
 
 // fn main() {
 //   let x = [1,2,3]
-//   let y = list.map(x, fn(x) {x*2}, [])
-//   let z = list.take_while(y, fn(x) {x < 3})
-
-//   [1,2,3,4]
+//   let y = list.reverse(x)
 // }
-
 // ";
-
 //     // With Pipeline Operator
 //     let expected = "
-// fn main() {
-//   let x = [1, 2, 3]
+// import list
 
-//   let z =
-//     x
-//     |> list.map(fn(x) { x * 2 }, [])
-//     |> list.take_while(fn(x) { x < 3 })
+// fn main() {
+//   let result = 
+// [1, 2, 3]
+// |> list.map(fn(x) { x * 2 })
+// |> list.reverse()
 // }
 // ";
 
+//     let position_start = Position::new(4, 0);
+//     let position_end = Position::new(4, 61);
 
-//     assert_eq!(suggest_pipeline(code, 1), expected);
+
+//     assert_eq!(suggest_pipeline(code, position_start, position_end), expected);
 // }
 
 #[test]
@@ -294,7 +292,7 @@ fn main() {
 import list
 
 fn main() {
-  let result = 
+  let result =
 [1, 2, 3]
 |> list.map(fn(x) { x * 2 })
 |> list.reverse()
@@ -328,7 +326,7 @@ fn buildlist() -> List(Int) {
 import list
 
 fn main() {
-  let result = 
+  let result =
 buildlist()
 |> list.map(fn(x) { x * 2 })
 |> list.reverse()
@@ -340,97 +338,152 @@ fn buildlist() -> List(Int) {
 ";
 
     let position_start = Position::new(4, 0);
-    let position_end = Position::new(4, 61);
+    let position_end = Position::new(4, 66);
 
 
     assert_eq!(suggest_pipeline(code, position_start, position_end), expected);
 }
 
-// #[test]
-// fn test_suggest_pipeline_on_multiple_lines(){
-//     // Without Pipeline Operator
-//     let code = "
-//     import list
+#[test]
+fn test_suggest_pipeline_expression(){
 
-//     fn main() {
-//         let init = 1
-        
-//         let x = [1,2,3]
-//         let y = list.map(x, fn(x) {x*2}, [])
-//         let z = list.take_while(y, fn(x) {x < 3})
-//     }
+let code = "
+import list
 
-//     ";
+fn main(){
+  list.reverse(list.map([1, 2, 3], fn(x){x*2}))
+}
+";
 
-//     // With Pipeline Operator
-//     let expected = "
-//     fn main() -> Int {
-//         let init = 1
-        
-//         init
-//         |> double
-//         |> multiplied(4)
-//     }
-    
-//     fn double(in: Int) -> Int {
-//         in * 2
-//     }
-    
-//     fn multiplied(mult: Int, in: Int) -> Int {
-//         in * mult
-//     }
-//     ";
+// With Pipeline Operator
+let expected = "
+import list
+
+fn main(){
+  [1, 2, 3]
+|> list.map(fn(x) { x * 2 })
+|> list.reverse()
+}
+";  
+    let position_start = Position::new(4, 0);
+    let position_end = Position::new(4, 48);
 
 
-//     assert_eq!(suggest_pipeline(code, 1),
-//                expected);
-//     //Maybe also make this pipeline suggestion on line 2 (doubled)?
-//     // assert_eq!(suggest_pipeline(code, 1),
-//     // expected)
-// }
+    assert_eq!(suggest_pipeline(code, position_start, position_end), expected);
+}
 
-// #[test]
-// fn test_suggest_pipeline_expression(){
+#[test]
+fn test_suggest_pipeline_complete(){
+    let code = "
+import list
 
-//     // Without Pipeline Operator
-// //     let code = "
-// // import list
+fn main(){
+  let x = [4,5,6]
+  let x = [1,2,3]
+  let y = list.reverse(list.map(x, fn(x){x*2}))
+  let z = list.reverse(y)
+}
+";
 
-// // fn main() -> List(int) {
-// //   let x = [1, 2, 3]
+// With Pipeline Operator
+let expected = "
+import list
 
-// //   x
-// //   |> list.map(fn(x) { x * 2 }, [])
-// //   |> list.take_while(fn(x) { x < 3 })
-// // }
-// // ";
+fn main(){
+  let x = [4,5,6]
+  
+  
+  let z =
+[1, 2, 3]
+|> list.map(fn(x) { x * 2 })
+|> list.reverse()
+|> list.reverse()
+}
+";  
+    let position_start = Position::new(5, 2);
+    let position_end = Position::new(7, 25);
 
-// let code = "
-// import list
+    assert_eq!(suggest_pipeline(code, position_start, position_end), expected);
+}
 
-// fn main(){
-//     let z = example()
-// }
+#[test]
+fn test_suggest_pipeline_input_is_argument(){
+    let code = "
+import list
 
-// fn example() -> List(int) {
-//     [1, 2, 3, 4, 5]
-// }
-// ";
+fn main(){
+  try([1,2,3])
+}
 
-//     // With Pipeline Operator
-//     let expected = "
-// import list
+fn try(x: List(Int)){
+  let y = list.reverse(list.map(x, fn(u) { u * 2 }))
+  let z = list.reverse(y)
+}
+";
 
-// fn main() -> List(int) {
-//   let x = [1, 2, 3]
+let expected = "
+import list
 
-//   x
-//   |> list.map(fn(x) { x * 2 }, [])
-//   |> list.take_while(fn(x) { x < 3 })
-// }
-// ";  
-//     assert_eq!(suggest_pipeline(code, 1), expected);
-// }
+fn main(){
+  try([1,2,3])
+}
+
+fn try(x: List(Int)){
+  
+  let z =
+x
+|> list.map(fn(u) { u * 2 })
+|> list.reverse()
+|> list.reverse()
+}
+";  
+
+    let position_start = Position::new(8, 2);
+    let position_end = Position::new(9, 25);
+
+
+    assert_eq!(suggest_pipeline(code, position_start, position_end), expected);
+}
+
+#[test]
+fn test_suggest_pipeline_combination_expr_and_assign(){
+    let code = "
+import list
+
+fn main(){
+  let x = [4,5,6]
+  let x = [1,2,3]
+  let y = list.reverse(list.map(x, fn(x){x*2}))
+  list.reverse(y)
+}
+";
+
+// With Pipeline Operator
+let expected = "
+import list
+
+fn main(){
+  let x = [4,5,6]
+  
+  
+  [1, 2, 3]
+|> list.map(fn(x) { x * 2 })
+|> list.reverse()
+|> list.reverse()
+}
+";  
+    let position_start = Position::new(5, 2);
+    let position_end = Position::new(7, 25);
+
+    assert_eq!(suggest_pipeline(code, position_start, position_end), expected);
+}
+
+#[test]
+fn ook_een_test_waarbij_de_pipeline_parts_scattered_zin(){
+
+}
+//OOK EEN TEST WAARBIJ DE VAR VAN EEN CALLARG EXTERN IS??
+
 
 /* TODO: implement qualified unused location
 #[test]

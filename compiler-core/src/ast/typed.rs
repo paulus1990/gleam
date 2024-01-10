@@ -514,9 +514,11 @@ impl TypedExpr {
             },
             TypedExpr::Case { location, typ, subjects, clauses } => todo!(),
             TypedExpr::RecordAccess { location, typ, label, index, record } => todo!(),
-            TypedExpr::ModuleSelect { location, typ, label, module_name, module_alias, constructor } => {
+            TypedExpr::ModuleSelect { location, typ, label, module_name, module_alias, constructor } => 
+            {
                 //list.reverse
-                format!("{}.{}",module_name,label)
+                dbg!(self);
+                format!("{}.{}",module_alias,label)
             },
             TypedExpr::Tuple { location, typ, elems } => {
                 let mut res = "(".to_string();
