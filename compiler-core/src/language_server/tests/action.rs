@@ -338,7 +338,7 @@ fn buildlist() -> List(Int) {
 ";
 
     let position_start = Position::new(4, 0);
-    let position_end = Position::new(4, 66);
+    let position_end = Position::new(4, 65);
 
 
     assert_eq!(suggest_pipeline(code, position_start, position_end), expected);
@@ -366,7 +366,7 @@ fn main(){
 }
 ";  
     let position_start = Position::new(4, 0);
-    let position_end = Position::new(4, 48);
+    let position_end = Position::new(4, 47);
 
 
     assert_eq!(suggest_pipeline(code, position_start, position_end), expected);
@@ -480,7 +480,41 @@ fn main(){
 
 #[test]
 fn ook_een_test_waarbij_de_pipeline_parts_scattered_zin(){
+    let code = r#"
+import list
 
+fn main(){
+  let x = [4,5,6]
+  let u = "pipeline"
+  let x = [1,2,3]
+  let v = "is"
+  let y = list.reverse(list.map(x, fn(x){x*2}))
+  let w = "awesome"
+  list.reverse(y)
+}
+"#;
+
+// With Pipeline Operator
+let expected = r#"
+import list
+
+fn main(){
+  let x = [4,5,6]
+  let u = "pipeline"
+  
+  let v = "is"
+  
+  let w = "awesome"
+  [1, 2, 3]
+|> list.map(fn(x) { x * 2 })
+|> list.reverse()
+|> list.reverse()
+}
+"#;  
+    let position_start = Position::new(4, 0);
+    let position_end = Position::new(10, 25);
+
+    assert_eq!(suggest_pipeline(code, position_start, position_end), expected);
 }
 //OOK EEN TEST WAARBIJ DE VAR VAN EEN CALLARG EXTERN IS??
 
