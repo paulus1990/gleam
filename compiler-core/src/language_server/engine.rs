@@ -675,16 +675,6 @@ fn gleam_pipeline_suggestions(
                     }
                 }
             }
-
-            //Create edit to remove the statements which are converted to inline values
-            // for span_statement in statements_consumed{
-            //     let range = src_span_to_lsp_range(span_statement, &line_numbers);
-            //     edits.push(lsp_types::TextEdit {
-            //         range,
-            //         new_text: "".into(),
-            //     });
-            // }
-
         }
     }
 
@@ -721,30 +711,6 @@ fn inline_statement(statement: &Statement<Arc<Type>, TypedExpr>, new:&mut Vec<In
 
     new.push(Inlined{ statement: clone, spans_consumed_statements: consumed });
 }
-// fn inline_statements(statements: &vec1::Vec1<Statement<Arc<Type>, TypedExpr>>) -> (Vec<SrcSpan>, Vec<Inlined>) {
-//     let mut inlined_statements = Vec::new();
-//     let mut pos_consumed_statements = Vec::new();
-    
-//     for statement in statements.iter(){
-//         inline_statement(statement, &mut inlined_statements, &mut pos_consumed_statements)
-//     }
-
-//     (pos_consumed_statements, inlined_statements)
-// }
-
-// fn inline_statement(statement: &Statement<Arc<Type>, TypedExpr>, new:&mut Vec<Inlined>, positions_to_be_emptied: &mut Vec<SrcSpan>) {
-//     let mut clone = statement.clone();
-
-//     let mut expr = match &mut clone{
-//         Statement::Expression(e) => e,
-//         Statement::Assignment(a) => &mut a.value,
-//         _ => todo!(),
-//     };
-
-//     let consumed = do_the_inlining(expr, new); 
-
-//     new.push(Inlined{ statement: clone, spans_consumed_statements: consumed });
-// }
 
 fn do_the_inlining(
     expr: &mut TypedExpr,
@@ -807,37 +773,6 @@ fn do_the_inlining(
     }
 }
 
-// fn do_the_inlining(expr: &mut TypedExpr, already_inlined_statements: &mut Vec<Statement<Arc<Type>, TypedExpr>>, position_to_be_emptied: &mut Vec<SrcSpan>) {
-//     if let TypedExpr::Call { location:_, typ:_, fun:_, args } = expr{
-//         for arg in args{
-//             if let TypedExpr::Call { .. } = &mut arg.value{
-//                 do_the_inlining(&mut arg.value, already_inlined_statements, position_to_be_emptied)
-//             }
-
-//             if let TypedExpr::Var { location: _, constructor, name: _ } = &mut arg.value{
-//                 if let ValueConstructorVariant::LocalVariable { location } = &mut constructor.variant{
-//                     let found = already_inlined_statements.iter().position(|statement| {
-//                         if let Statement::Assignment(assignment) = statement{
-//                            let assign_location = assignment.pattern.location();
-//                            assign_location.start == location.start && assign_location.end == location.end
-//                         } else {
-//                             false
-//                         }
-//                     });
-
-//                     if let Some(index) = found{
-//                         let statement_to_be_inlined = already_inlined_statements.remove(index);
-//                         position_to_be_emptied.push(statement_to_be_inlined.location());
-//                         if let Statement::Assignment(expr_to_be_inlined) = statement_to_be_inlined{
-//                             arg.value = *expr_to_be_inlined.value
-//                         }
-//                     }
-//                 }
-//             }
-//         }
-//     }
-// }
-
 fn translate_statement_to_string(statement: &Statement<Arc<Type>, TypedExpr>) -> String {
     if let Statement::Assignment(assign) = statement{
         match &assign.pattern{
@@ -887,34 +822,6 @@ fn detect_pipeline(inlined_statements: &Vec<Inlined>) -> Option<Vec<(&Statement<
         Some(chains_to_be_converted)
     }
 }
-// fn detect_pipeline(inlined_statements: &Vec<Statement<Arc<Type>, TypedExpr>>) -> Option<Vec<(&Statement<Arc<Type>, TypedExpr>, Vec<&TypedExpr>)>> {
-
-//     //WAAROM EEN TUPLE???
-//     let mut chains_to_be_converted: Vec<(&Statement<Arc<Type>, TypedExpr>, Vec<&TypedExpr>)> = Vec::new();
-
-//     //kijken of er func_chaining plaatsvind in de argumenten
-//     for statement in inlined_statements{
-//         let mut func_chain: Vec<&TypedExpr> = Vec::new();
-
-//         match statement{
-//             Statement::Expression(expr) => retrieve_call_chain(expr, &mut func_chain),
-//             Statement::Assignment(assign) => retrieve_call_chain(&assign.value, &mut func_chain),
-//             Statement::Use(_) => todo!(),
-//         }
-
-//         if !func_chain.is_empty() {
-//             chains_to_be_converted.push((statement, func_chain));
-//         }
-//     }
-
-//     let result: Vec<_> = chains_to_be_converted.iter().filter(|chain| chain.1.len() > 1).collect();
-
-//     if result.is_empty(){
-//         None
-//     } else{
-//         Some(chains_to_be_converted)
-//     }
-// }
 
 fn translate_func_chain_to_pipeline(
     mut chains: Vec<&TypedExpr>,
@@ -1019,7 +926,7 @@ fn retrieve_call_chain<'a>(expr: &'a TypedExpr, func_chain: &mut Vec<&'a TypedEx
 }
 
 #[derive(Debug)]
-struct Inlined<>{
+struct Inlined{
     statement: Statement<Arc<Type>, TypedExpr>,
     spans_consumed_statements: Option<Vec<SrcSpan>>
 }
