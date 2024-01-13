@@ -400,7 +400,7 @@ fn main(){
 |> list.reverse()
 }
 ";  
-    let position_start = Position::new(5, 2);
+    let position_start = Position::new(7, 0);
     let position_end = Position::new(7, 25);
 
     assert_eq!(suggest_pipeline(code, position_start, position_end), expected);
@@ -438,7 +438,7 @@ x
 }
 ";  
 
-    let position_start = Position::new(8, 2);
+    let position_start = Position::new(9, 0);
     let position_end = Position::new(9, 25);
 
 
@@ -472,7 +472,7 @@ fn main(){
 |> list.reverse()
 }
 ";  
-    let position_start = Position::new(5, 2);
+    let position_start = Position::new(7, 0);
     let position_end = Position::new(7, 25);
 
     assert_eq!(suggest_pipeline(code, position_start, position_end), expected);
@@ -511,13 +511,87 @@ fn main(){
 |> list.reverse()
 }
 "#;  
-    let position_start = Position::new(4, 0);
+    let position_start = Position::new(10, 0);
     let position_end = Position::new(10, 25);
 
     assert_eq!(suggest_pipeline(code, position_start, position_end), expected);
 }
-//OOK EEN TEST WAARBIJ DE VAR VAN EEN CALLARG EXTERN IS??
 
+#[test]
+fn test_suggest_pipeline_with_multiple_pipeline_suggestions_in_one_fn_body(){
+    let code = r#"
+import list
+
+fn main(){
+  let u = [1, 2, 3]
+  let v = [4, 5, 6]
+  let w = list.reverse(list.map(u, fn(a) { a * 2 }))
+  let x = list.reverse(list.map(v, fn(b) { b * 2 }))
+  let y = list.reverse(w)
+  let z = list.reverse(x)
+}
+"#;
+
+// With Pipeline Operator
+let expected = r#"
+import list
+
+fn main(){
+  let u = [1, 2, 3]
+  
+  let w = list.reverse(list.map(u, fn(a) { a * 2 }))
+  
+  let y = list.reverse(w)
+  let z =
+[4, 5, 6]
+|> list.map(fn(b) { b * 2 })
+|> list.reverse()
+|> list.reverse()
+}
+"#;  
+    let position_start = Position::new(9, 0);
+    let position_end = Position::new(9, 25);
+
+    assert_eq!(suggest_pipeline(code, position_start, position_end), expected);
+}
+
+#[test]
+fn test_suggest_pipeline_with_multiple_pipeline_suggestions_in_one_fn_body_alt(){
+    let code = r#"
+import list
+
+fn main(){
+  let u = [1, 2, 3]
+  let v = [4, 5, 6]
+  let w = list.reverse(list.map(u, fn(a) { a * 2 }))
+  let x = list.reverse(list.map(v, fn(b) { b * 2 }))
+  let y = list.reverse(w)
+  let z = list.reverse(x)
+}
+"#;
+
+// With Pipeline Operator
+let expected = r#"
+import list
+
+fn main(){
+  
+  let v = [4, 5, 6]
+  
+  let x = list.reverse(list.map(v, fn(b) { b * 2 }))
+  let y =
+[1, 2, 3]
+|> list.map(fn(a) { a * 2 })
+|> list.reverse()
+|> list.reverse()
+  let z = list.reverse(x)
+}
+"#;  
+    let position_start = Position::new(8, 0);
+    let position_end = Position::new(8, 25);
+
+    assert_eq!(suggest_pipeline(code, position_start, position_end), expected);
+}
 
 /* TODO: implement qualified unused location
 #[test]
