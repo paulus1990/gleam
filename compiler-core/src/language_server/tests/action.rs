@@ -489,7 +489,7 @@ fn main(){
   let x = [1,2,3]
   let v = "is"
   let y = list.reverse(list.map(x, fn(x){x*2}))
-  let w = "awesome"
+  let w = "idiomatic"
   list.reverse(y)
 }
 "#;
@@ -504,7 +504,7 @@ fn main(){
   
   let v = "is"
   
-  let w = "awesome"
+  let w = "idiomatic"
   [1, 2, 3]
 |> list.map(fn(x) { x * 2 })
 |> list.reverse()
