@@ -9,8 +9,8 @@ use crate::{
     },
     build::Origin,
     type_::{
-        self, Deprecation, ModuleInterface, Type, TypeConstructor, ValueConstructor,
-        ValueConstructorVariant,
+        self, expression::SupportedTargets, Deprecation, ModuleInterface, Type, TypeConstructor,
+        TypeValueConstructor, ValueConstructor, ValueConstructorVariant,
     },
     uid::UniqueIdGenerator,
 };
@@ -32,7 +32,7 @@ fn constant_module(constant: TypedConstant) -> ModuleInterface {
         origin: Origin::Src,
         name: "a".into(),
         types: HashMap::new(),
-        types_constructors: HashMap::new(),
+        types_value_constructors: HashMap::new(),
         unused_imports: Vec::new(),
         accessors: HashMap::new(),
         values: [(
@@ -46,11 +46,11 @@ fn constant_module(constant: TypedConstant) -> ModuleInterface {
                     literal: constant,
                     location: SrcSpan::default(),
                     module: "one/two".into(),
+                    supported_targets: SupportedTargets::all(),
                 },
             },
         )]
         .into(),
-        type_only_unqualified_imports: Vec::new(),
     }
 }
 
@@ -72,12 +72,11 @@ fn bit_array_segment_option_module(option: TypedConstantBitArraySegmentOption) -
 #[test]
 fn empty_module() {
     let module = ModuleInterface {
-        type_only_unqualified_imports: Vec::new(),
         package: "some_package".into(),
         origin: Origin::Src,
         name: "one/two".into(),
         types: HashMap::new(),
-        types_constructors: HashMap::new(),
+        types_value_constructors: HashMap::new(),
         values: HashMap::new(),
         unused_imports: Vec::new(),
         accessors: HashMap::new(),
@@ -88,7 +87,6 @@ fn empty_module() {
 #[test]
 fn module_with_private_type() {
     let module = ModuleInterface {
-        type_only_unqualified_imports: Vec::new(),
         package: "some_package".into(),
         origin: Origin::Src,
         name: "a/b".into(),
@@ -104,7 +102,7 @@ fn module_with_private_type() {
             },
         )]
         .into(),
-        types_constructors: HashMap::new(),
+        types_value_constructors: HashMap::new(),
         values: HashMap::new(),
         unused_imports: Vec::new(),
         accessors: HashMap::new(),
@@ -115,12 +113,11 @@ fn module_with_private_type() {
 #[test]
 fn module_with_unused_import() {
     let module = ModuleInterface {
-        type_only_unqualified_imports: Vec::new(),
         package: "some_package".into(),
         origin: Origin::Src,
         name: "a".into(),
         types: HashMap::new(),
-        types_constructors: HashMap::new(),
+        types_value_constructors: HashMap::new(),
         unused_imports: vec![
             SrcSpan { start: 0, end: 10 },
             SrcSpan { start: 13, end: 42 },
@@ -134,7 +131,6 @@ fn module_with_unused_import() {
 #[test]
 fn module_with_app_type() {
     let module = ModuleInterface {
-        type_only_unqualified_imports: Vec::new(),
         package: "some_package".into(),
         origin: Origin::Src,
         name: "a/b".into(),
@@ -150,7 +146,7 @@ fn module_with_app_type() {
             },
         )]
         .into(),
-        types_constructors: HashMap::new(),
+        types_value_constructors: HashMap::new(),
         values: HashMap::new(),
         unused_imports: Vec::new(),
         accessors: HashMap::new(),
@@ -161,7 +157,6 @@ fn module_with_app_type() {
 #[test]
 fn module_with_fn_type() {
     let module = ModuleInterface {
-        type_only_unqualified_imports: Vec::new(),
         package: "some_package".into(),
         origin: Origin::Src,
         name: "a/b".into(),
@@ -177,7 +172,7 @@ fn module_with_fn_type() {
             },
         )]
         .into(),
-        types_constructors: HashMap::new(),
+        types_value_constructors: HashMap::new(),
         values: HashMap::new(),
         unused_imports: Vec::new(),
         accessors: HashMap::new(),
@@ -188,7 +183,6 @@ fn module_with_fn_type() {
 #[test]
 fn module_with_tuple_type() {
     let module = ModuleInterface {
-        type_only_unqualified_imports: Vec::new(),
         package: "some_package".into(),
         origin: Origin::Src,
         name: "a/b".into(),
@@ -204,7 +198,7 @@ fn module_with_tuple_type() {
             },
         )]
         .into(),
-        types_constructors: HashMap::new(),
+        types_value_constructors: HashMap::new(),
         values: HashMap::new(),
         unused_imports: Vec::new(),
         accessors: HashMap::new(),
@@ -221,7 +215,6 @@ fn module_with_generic_type() {
 
     fn make(t1: Arc<Type>, t2: Arc<Type>) -> ModuleInterface {
         ModuleInterface {
-            type_only_unqualified_imports: Vec::new(),
             package: "some_package".into(),
             origin: Origin::Src,
             name: "a/b".into(),
@@ -237,7 +230,7 @@ fn module_with_generic_type() {
                 },
             )]
             .into(),
-            types_constructors: HashMap::new(),
+            types_value_constructors: HashMap::new(),
             values: HashMap::new(),
             unused_imports: Vec::new(),
             accessors: HashMap::new(),
@@ -254,7 +247,6 @@ fn module_with_type_links() {
 
     fn make(type_: Arc<Type>) -> ModuleInterface {
         ModuleInterface {
-            type_only_unqualified_imports: Vec::new(),
             package: "some_package".into(),
             origin: Origin::Src,
             name: "a".into(),
@@ -270,7 +262,7 @@ fn module_with_type_links() {
                 },
             )]
             .into(),
-            types_constructors: HashMap::new(),
+            types_value_constructors: HashMap::new(),
             values: HashMap::new(),
             unused_imports: Vec::new(),
             accessors: HashMap::new(),
@@ -283,13 +275,19 @@ fn module_with_type_links() {
 #[test]
 fn module_type_to_constructors_mapping() {
     let module = ModuleInterface {
-        type_only_unqualified_imports: Vec::new(),
         package: "some_package".into(),
         origin: Origin::Src,
         name: "a".into(),
         types: HashMap::new(),
-        types_constructors: [("SomeType".into(), vec!["One".into()])].into(),
-        unused_imports: Vec::new(),
+        types_value_constructors: [(
+            "SomeType".into(),
+            vec![TypeValueConstructor {
+                name: "One".into(),
+                parameters: vec![],
+            }],
+        )]
+        .into(),
+        unused_imports: Default::default(),
         accessors: HashMap::new(),
         values: HashMap::new(),
     };
@@ -300,13 +298,12 @@ fn module_type_to_constructors_mapping() {
 #[test]
 fn module_fn_value() {
     let module = ModuleInterface {
-        type_only_unqualified_imports: Vec::new(),
         package: "some_package".into(),
         origin: Origin::Src,
         name: "a".into(),
         types: HashMap::new(),
-        types_constructors: HashMap::new(),
         unused_imports: Vec::new(),
+        types_value_constructors: HashMap::new(),
         accessors: HashMap::new(),
         values: [(
             "one".into(),
@@ -324,6 +321,7 @@ fn module_fn_value() {
                         start: 535,
                         end: 1100,
                     },
+                    supported_targets: SupportedTargets::all(),
                 },
             },
         )]
@@ -335,12 +333,11 @@ fn module_fn_value() {
 #[test]
 fn deprecated_module_fn_value() {
     let module = ModuleInterface {
-        type_only_unqualified_imports: Vec::new(),
         package: "some_package".into(),
         origin: Origin::Src,
         name: "a".into(),
         types: HashMap::new(),
-        types_constructors: HashMap::new(),
+        types_value_constructors: HashMap::new(),
         unused_imports: Vec::new(),
         accessors: HashMap::new(),
         values: [(
@@ -361,6 +358,7 @@ fn deprecated_module_fn_value() {
                         start: 535,
                         end: 1100,
                     },
+                    supported_targets: SupportedTargets::all(),
                 },
             },
         )]
@@ -372,13 +370,12 @@ fn deprecated_module_fn_value() {
 #[test]
 fn private_module_fn_value() {
     let module = ModuleInterface {
-        type_only_unqualified_imports: Vec::new(),
         package: "some_package".into(),
         origin: Origin::Src,
         name: "a".into(),
         types: HashMap::new(),
-        types_constructors: HashMap::new(),
         unused_imports: Vec::new(),
+        types_value_constructors: HashMap::new(),
         accessors: HashMap::new(),
         values: [(
             "one".into(),
@@ -396,6 +393,7 @@ fn private_module_fn_value() {
                         start: 535,
                         end: 1100,
                     },
+                    supported_targets: SupportedTargets::all(),
                 },
             },
         )]
@@ -409,12 +407,11 @@ fn private_module_fn_value() {
 #[test]
 fn module_fn_value_regression() {
     let module = ModuleInterface {
-        type_only_unqualified_imports: Vec::new(),
         package: "some_package".into(),
         origin: Origin::Src,
         name: "a/b/c".into(),
         types: HashMap::new(),
-        types_constructors: HashMap::new(),
+        types_value_constructors: HashMap::new(),
         unused_imports: Vec::new(),
         accessors: HashMap::new(),
         values: [(
@@ -433,6 +430,7 @@ fn module_fn_value_regression() {
                         start: 52,
                         end: 1100,
                     },
+                    supported_targets: SupportedTargets::all(),
                 },
             },
         )]
@@ -445,12 +443,11 @@ fn module_fn_value_regression() {
 #[test]
 fn module_fn_value_with_field_map() {
     let module = ModuleInterface {
-        type_only_unqualified_imports: Vec::new(),
         package: "some_package".into(),
         origin: Origin::Src,
         name: "a".into(),
         types: HashMap::new(),
-        types_constructors: HashMap::new(),
+        types_value_constructors: HashMap::new(),
         unused_imports: Vec::new(),
         accessors: HashMap::new(),
         values: [(
@@ -469,6 +466,7 @@ fn module_fn_value_with_field_map() {
                     module: "a".into(),
                     arity: 5,
                     location: SrcSpan { start: 2, end: 11 },
+                    supported_targets: SupportedTargets::all(),
                 },
             },
         )]
@@ -483,12 +481,11 @@ fn record_value() {
     let mut random = rand::thread_rng();
 
     let module = ModuleInterface {
-        type_only_unqualified_imports: Vec::new(),
         package: "some_package".into(),
         origin: Origin::Src,
         name: "a".into(),
         types: HashMap::new(),
-        types_constructors: HashMap::new(),
+        types_value_constructors: HashMap::new(),
         unused_imports: Vec::new(),
         accessors: HashMap::new(),
         values: [(
@@ -508,6 +505,7 @@ fn record_value() {
                         start: random.gen(),
                         end: random.gen(),
                     },
+                    constructor_index: random.gen(),
                 },
             },
         )]
@@ -522,12 +520,11 @@ fn record_value_with_field_map() {
     let mut random = rand::thread_rng();
 
     let module = ModuleInterface {
-        type_only_unqualified_imports: Vec::new(),
         package: "some_package".into(),
         origin: Origin::Src,
         name: "a".into(),
         types: HashMap::new(),
-        types_constructors: HashMap::new(),
+        types_value_constructors: HashMap::new(),
         unused_imports: Vec::new(),
         accessors: HashMap::new(),
         values: [(
@@ -546,6 +543,7 @@ fn record_value_with_field_map() {
                     }),
                     arity: random.gen(),
                     constructors_count: random.gen(),
+                    constructor_index: random.gen(),
                     location: SrcSpan {
                         start: random.gen(),
                         end: random.gen(),
@@ -562,12 +560,11 @@ fn record_value_with_field_map() {
 #[test]
 fn accessors() {
     let module = ModuleInterface {
-        type_only_unqualified_imports: Vec::new(),
         package: "some_package".into(),
         origin: Origin::Src,
         name: "a".into(),
         types: HashMap::new(),
-        types_constructors: HashMap::new(),
+        types_value_constructors: HashMap::new(),
         values: HashMap::new(),
         unused_imports: Vec::new(),
         accessors: [
@@ -761,17 +758,17 @@ fn constant_var() {
                 literal: one_original.clone(),
                 location: SrcSpan::default(),
                 module: "one/two".into(),
+                supported_targets: SupportedTargets::all(),
             },
         })),
     };
 
     let module = ModuleInterface {
-        type_only_unqualified_imports: Vec::new(),
         package: "some_package".into(),
         origin: Origin::Src,
         name: "a".into(),
         types: HashMap::new(),
-        types_constructors: HashMap::new(),
+        types_value_constructors: HashMap::new(),
         unused_imports: Vec::new(),
         accessors: HashMap::new(),
         values: [
@@ -786,6 +783,7 @@ fn constant_var() {
                         literal: one,
                         location: SrcSpan::default(),
                         module: "one/two".into(),
+                        supported_targets: SupportedTargets::all(),
                     },
                 },
             ),
@@ -800,6 +798,7 @@ fn constant_var() {
                         literal: one_original,
                         location: SrcSpan::default(),
                         module: "one/two".into(),
+                        supported_targets: SupportedTargets::all(),
                     },
                 },
             ),
@@ -969,7 +968,6 @@ fn constant_bit_array_native() {
 #[test]
 fn deprecated_type() {
     let module = ModuleInterface {
-        type_only_unqualified_imports: Vec::new(),
         package: "some_package".into(),
         origin: Origin::Src,
         name: "a/b".into(),
@@ -987,7 +985,7 @@ fn deprecated_type() {
             },
         )]
         .into(),
-        types_constructors: HashMap::new(),
+        types_value_constructors: HashMap::new(),
         values: HashMap::new(),
         unused_imports: Vec::new(),
         accessors: HashMap::new(),

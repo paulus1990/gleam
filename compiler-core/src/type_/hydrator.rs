@@ -124,7 +124,7 @@ impl Hydrator {
                     deprecation,
                     ..
                 } = environment
-                    .get_type_constructor(module, name, *location)
+                    .get_type_constructor(module, name)
                     .map_err(|e| convert_get_type_constructor_error(e, location))?
                     .clone();
 
@@ -143,7 +143,7 @@ impl Hydrator {
                 // We do not track use of qualified type constructors as they may be
                 // used in another module.
                 if module.is_none() {
-                    environment.increment_usage(name, Layer::Type);
+                    environment.increment_usage(name);
                 }
 
                 // Ensure that the correct number of arguments have been given to the constructor
@@ -212,11 +212,20 @@ impl Hydrator {
                         Ok(var)
                     }
 
-                    None => Err(Error::UnknownType {
-                        name: name.clone(),
-                        location: *location,
-                        types: environment.module_types.keys().cloned().collect(),
-                    }),
+                    None => {
+                        let hint = match environment.scope.contains_key(name) {
+                            true => UnknownTypeHint::ValueInScopeWithSameName,
+                            false => UnknownTypeHint::AlternativeTypes(
+                                environment.module_types.keys().cloned().collect(),
+                            ),
+                        };
+
+                        Err(Error::UnknownType {
+                            name: name.clone(),
+                            location: *location,
+                            hint,
+                        })
+                    }
                 }
             }
 

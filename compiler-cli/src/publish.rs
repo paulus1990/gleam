@@ -33,7 +33,7 @@ pub struct PublishCommand {
 
 impl PublishCommand {
     pub fn setup(replace: bool, i_am_sure: bool) -> Result<Option<Self>> {
-        let paths = crate::project_paths_at_current_directory();
+        let paths = crate::find_project_paths()?;
         let config = crate::config::root_config()?;
 
         // Ask for confirmation if the package name if `gleam_*`
@@ -49,6 +49,7 @@ core team.",
                 println!("Not publishing.");
                 std::process::exit(0);
             }
+            println!();
         }
 
         // Ask for confirmation if the package is below version 1
@@ -66,6 +67,7 @@ updates that would normally be safe."
                 println!("Not publishing.");
                 std::process::exit(0);
             }
+            println!();
         }
 
         let Tarball {
@@ -152,8 +154,8 @@ impl ApiKeyCommand for PublishCommand {
 Please push a git tag for this release so source code links in the
 HTML documentation will work:
 
-    git tag v{version}
-    git push origin v{version}
+    git tag {version}
+    git push origin {version}
 "
             )
         }
@@ -178,7 +180,7 @@ fn do_build_hex_tarball(paths: &ProjectPaths, config: &PackageConfig) -> Result<
     check_config_for_publishing(config)?;
 
     // Reset the build directory so we know the state of the project
-    fs::delete_dir(&paths.build_directory_for_target(Mode::Prod, target))?;
+    fs::delete_directory(&paths.build_directory_for_target(Mode::Prod, target))?;
 
     // Build the project to check that it is valid
     let built = build::main(

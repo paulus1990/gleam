@@ -31,9 +31,23 @@ pub struct VectorWarningEmitterIO {
 }
 
 impl VectorWarningEmitterIO {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
     pub fn take(&self) -> Vec<Warning> {
         let mut warnings = self.write_lock();
         std::mem::take(&mut *warnings)
+    }
+
+    pub fn reset(&self) {
+        let mut warnings = self.write_lock();
+        warnings.clear();
+    }
+
+    pub fn pop(&self) -> Option<Warning> {
+        let mut warnings = self.write_lock();
+        warnings.pop()
     }
 
     fn write_lock(&self) -> std::sync::RwLockWriteGuard<'_, Vec<Warning>> {
@@ -144,31 +158,17 @@ impl Warning {
     pub fn to_diagnostic(&self) -> Diagnostic {
         match self {
             Self::Parse { path, warning, src } => match warning {
-                crate::parse::Warning::DeprecatedOptionBitString { location } => {
-                    let text = "This option has been replaced by the `bits` option.\n".into();
-                    Diagnostic {
-                        title: "Deprecated bit literal option".into(),
-                        text,
-                        hint: Some("Run `gleam format` to auto-fix your code.".into()),
-                        level: diagnostic::Level::Warning,
-                        location: Some(Location {
-                            path: path.to_path_buf(),
-                            src: src.clone(),
-                            label: diagnostic::Label {
-                                text: None,
-                                span: *location,
-                            },
-                            extra_labels: Vec::new(),
-                        }),
-                    }
-                }
+                crate::parse::Warning::ReservedWord { location, word } => {
+                    let text = format!(
+                        "The word `{word}` has been reserved for future use.
 
-                crate::parse::Warning::DeprecatedOptionBinary { location } => {
-                    let text = "This option has been replaced by the `bytes` option.\n".into();
+If you do not rename this then your code may stop working in
+a future version of Gleam."
+                    );
                     Diagnostic {
-                        title: "Deprecated bit literal option".into(),
+                        title: "Reserved word used".into(),
                         text,
-                        hint: Some("Run `gleam format` to auto-fix your code.".into()),
+                        hint: None,
                         level: diagnostic::Level::Warning,
                         location: Some(Location {
                             path: path.to_path_buf(),
@@ -184,15 +184,14 @@ impl Warning {
             },
 
             Warning::InvalidSource { path } => Diagnostic {
-                title: "Invalid module name.".into(),
+                title: "Invalid module name".into(),
                 text: "Module names must begin with a lowercase letter and contain\
  only lowercase alphanumeric characters or underscores."
                     .into(),
                 level: diagnostic::Level::Warning,
                 location: None,
                 hint: Some(format!(
-                    "Rename `{}` to be valid, or remove this file from the project source.",
-                    path
+                    "Rename `{path}` to be valid, or remove this file from the project source."
                 )),
             },
             Self::Type { path, warning, src } => match warning {
@@ -247,7 +246,9 @@ expression.",
                 type_::Warning::ImplicitlyDiscardedResult { location } => Diagnostic {
                     title: "Unused result value".into(),
                     text: "".into(),
-                    hint: Some("If you are sure you don't need it you can assign it to `_`".into()),
+                    hint: Some(
+                        "If you are sure you don't need it you can assign it to `_`.".into(),
+                    ),
                     level: diagnostic::Level::Warning,
                     location: Some(Location {
                         path: path.to_path_buf(),
@@ -287,7 +288,7 @@ expression.",
                         path: path.to_path_buf(),
                         src: src.clone(),
                         label: diagnostic::Label {
-                            text: Some("This record update doesn't change any fields.".into()),
+                            text: Some("This record update doesn't change any fields".into()),
                             span: *location,
                         },
                         extra_labels: Vec::new(),
@@ -319,9 +320,9 @@ expression.",
                         "Unused private type".into()
                     };
                     let label = if *imported {
-                        "This imported type is never used.".into()
+                        "This imported type is never used".into()
                     } else {
-                        "This private type is never used.".into()
+                        "This private type is never used".into()
                     };
                     Diagnostic {
                         title,
@@ -349,9 +350,9 @@ expression.",
                         "Unused private constructor".into()
                     };
                     let label = if *imported {
-                        "This imported constructor is never used.".into()
+                        "This imported constructor is never used".into()
                     } else {
-                        "This private constructor is never used.".into()
+                        "This private constructor is never used".into()
                     };
                     Diagnostic {
                         title,
@@ -379,7 +380,7 @@ expression.",
                         src: src.clone(),
                         path: path.to_path_buf(),
                         label: diagnostic::Label {
-                            text: Some("This imported module is never used.".into()),
+                            text: Some("This imported module is never used".into()),
                             span: *location,
                         },
                         extra_labels: Vec::new(),
@@ -395,7 +396,7 @@ expression.",
                         src: src.clone(),
                         path: path.to_path_buf(),
                         label: diagnostic::Label {
-                            text: Some("This imported module alias is never used.".into()),
+                            text: Some("This imported module alias is never used".into()),
                             span: *location,
                         },
                         extra_labels: Vec::new(),
@@ -411,7 +412,7 @@ expression.",
                         src: src.clone(),
                         path: path.to_path_buf(),
                         label: diagnostic::Label {
-                            text: Some("This imported value is never used.".into()),
+                            text: Some("This imported value is never used".into()),
                             span: *location,
                         },
                         extra_labels: Vec::new(),
@@ -427,7 +428,7 @@ expression.",
                         src: src.clone(),
                         path: path.to_path_buf(),
                         label: diagnostic::Label {
-                            text: Some("This private constant is never used.".into()),
+                            text: Some("This private constant is never used".into()),
                             span: *location,
                         },
                         extra_labels: Vec::new(),
@@ -443,7 +444,7 @@ expression.",
                         src: src.clone(),
                         path: path.to_path_buf(),
                         label: diagnostic::Label {
-                            text: Some("This private function is never used.".into()),
+                            text: Some("This private function is never used".into()),
                             span: *location,
                         },
                         extra_labels: Vec::new(),
@@ -459,16 +460,16 @@ expression.",
                         src: src.clone(),
                         path: path.to_path_buf(),
                         label: diagnostic::Label {
-                            text: Some("This variable is never used.".into()),
+                            text: Some("This variable is never used".into()),
                             span: *location,
                         },
                         extra_labels: Vec::new(),
                     }),
                 },
                 type_::Warning::UnnecessaryDoubleIntNegation { location } => Diagnostic {
-                    title: "Unnecessary double negation (--) on integer.".into(),
+                    title: "Unnecessary double negation (--) on integer".into(),
                     text: "".into(),
-                    hint: Some("You can safely remove this".into()),
+                    hint: Some("You can safely remove this.".into()),
                     level: diagnostic::Level::Warning,
                     location: Some(Location {
                         src: src.clone(),
@@ -481,7 +482,7 @@ expression.",
                     }),
                 },
                 type_::Warning::UnnecessaryDoubleBoolNegation { location } => Diagnostic {
-                    title: "Unnecessary double negation (!!) on bool.".into(),
+                    title: "Unnecessary double negation (!!) on bool".into(),
                     text: "".into(),
                     hint: Some("You can safely remove this.".into()),
                     level: diagnostic::Level::Warning,
@@ -510,7 +511,7 @@ need to know if the list is empty or not.
                     });
 
                     Diagnostic {
-                        title: "Inefficient use of list.length".into(),
+                        title: "Inefficient use of `list.length`".into(),
                         text,
                         hint,
                         level: diagnostic::Level::Warning,
@@ -543,7 +544,7 @@ Run this command to add it to your dependencies:
 "
                     ));
                     Diagnostic {
-                        title: "Transative dependency imported".into(),
+                        title: "Transitive dependency imported".into(),
                         text,
                         hint: None,
                         level: diagnostic::Level::Warning,
@@ -594,12 +595,31 @@ Run this command to add it to your dependencies:
                     }
                 }
 
-                type_::Warning::DeprecatedBitString { location } => {
-                    let text = "The type BitString has been renamed to BitArray.\n".into();
+                type_::Warning::InexhaustiveLetAssignment { location, missing } => {
+                    let mut text: String =
+                        "This assignment uses a pattern that does not match all possible
+values. If one of the other values is used then the assignment
+will crash.
+
+The missing patterns are:\n"
+                            .into();
+                    for missing in missing {
+                        text.push_str("\n    ");
+                        text.push_str(missing);
+                    }
+                    text.push_str(
+                        "
+
+In a future version of Gleam this will become a compile error.
+",
+                    );
+
                     Diagnostic {
-                        title: "Deprecated BitString name used".into(),
+                        title: "Inexhaustive pattern".into(),
                         text,
-                        hint: Some("Run `gleam fix` to auto-fix your code.".into()),
+                        hint: Some(
+                            "Use a more general pattern or use `let assert` instead.".into(),
+                        ),
                         level: diagnostic::Level::Warning,
                         location: Some(Location {
                             src: src.clone(),
@@ -613,17 +633,50 @@ Run this command to add it to your dependencies:
                     }
                 }
 
-                type_::Warning::DeprecatedTypeImport { name, location } => {
-                    let text = wrap(&format!(
-                        "The syntax for importing a type has changed. The new syntax is:
+                type_::Warning::InexhaustiveCaseExpression { location, missing } => {
+                    let mut text: String =
+                        "This case expression does not have a pattern for all possible values.
+If is run on one of the values without a pattern then it will crash.
 
-    import module.{{type {name}}}
-"
-                    ));
+The missing patterns are:\n"
+                            .into();
+                    for missing in missing {
+                        text.push_str("\n    ");
+                        text.push_str(missing);
+                    }
+                    text.push_str(
+                        "
+
+In a future version of Gleam this will become a compile error.
+",
+                    );
+
                     Diagnostic {
-                        title: "Deprecated type import".into(),
+                        title: "Inexhaustive patterns".into(),
                         text,
-                        hint: Some("Run `gleam fix` to auto-fix your code.".into()),
+                        hint: None,
+                        level: diagnostic::Level::Warning,
+                        location: Some(Location {
+                            src: src.clone(),
+                            path: path.to_path_buf(),
+                            label: diagnostic::Label {
+                                text: None,
+                                span: *location,
+                            },
+                            extra_labels: Vec::new(),
+                        }),
+                    }
+                }
+
+                type_::Warning::UnreachableCaseClause { location } => {
+                    let text: String =
+                        "This case clause cannot be reached as a previous clause matches
+the same values.\n"
+                            .into();
+                    Diagnostic {
+                        title: "Unreachable case clause".into(),
+                        text,
+                        hint: Some("It can be safely removed.".into()),
                         level: diagnostic::Level::Warning,
                         location: Some(Location {
                             src: src.clone(),

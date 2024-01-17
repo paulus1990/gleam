@@ -8,11 +8,12 @@ use crate::{
         BitArrayOption, BitArraySegment, CallArg, Constant, SrcSpan, TypedConstant,
         TypedConstantBitArraySegment, TypedConstantBitArraySegmentOption,
     },
-    build::Origin,
+    build::{Origin, Target},
     schema_capnp::{self as schema, *},
     type_::{
-        self, AccessorsMap, Deprecation, FieldMap, ModuleInterface, RecordAccessor, Type,
-        TypeConstructor, ValueConstructor, ValueConstructorVariant,
+        self, expression::SupportedTargets, AccessorsMap, Deprecation, FieldMap, ModuleInterface,
+        RecordAccessor, Type, TypeConstructor, TypeValueConstructor, TypeValueConstructorParameter,
+        ValueConstructor, ValueConstructorVariant,
     },
     uid::UniqueIdGenerator,
     Result,
@@ -68,15 +69,14 @@ impl ModuleDecoder {
             package: reader.get_package()?.into(),
             origin: Origin::Src,
             types: read_hashmap!(reader.get_types()?, self, type_constructor),
-            types_constructors: read_hashmap!(
+            types_value_constructors: read_hashmap!(
                 reader.get_types_constructors()?,
                 self,
-                constructors_list
+                type_value_constructors
             ),
             values: read_hashmap!(reader.get_values()?, self, value_constructor),
             accessors: read_hashmap!(reader.get_accessors()?, self, accessors_map),
             unused_imports: read_vec!(reader.get_unused_imports()?, self, src_span),
-            type_only_unqualified_imports: Vec::new(),
         })
     }
 
@@ -147,11 +147,42 @@ impl ModuleDecoder {
         Ok(type_::generic_var(id))
     }
 
-    fn constructors_list(
+    fn type_value_constructors(
         &mut self,
-        reader: &capnp::text_list::Reader<'_>,
-    ) -> Result<Vec<EcoString>> {
-        Ok(reader.iter().map_ok(EcoString::from).try_collect()?)
+        reader: &capnp::struct_list::Reader<'_, type_value_constructor::Owned>,
+    ) -> Result<Vec<TypeValueConstructor>> {
+        reader
+            .iter()
+            .map(|r| self.type_value_constructor(&r))
+            .try_collect()
+    }
+
+    fn type_value_constructor(
+        &mut self,
+        reader: &type_value_constructor::Reader<'_>,
+    ) -> Result<TypeValueConstructor> {
+        Ok(TypeValueConstructor {
+            name: reader.get_name()?.into(),
+            parameters: read_vec!(
+                reader.get_parameters()?,
+                self,
+                type_value_constructor_parameter
+            ),
+        })
+    }
+
+    fn type_value_constructor_parameter(
+        &mut self,
+        reader: &type_value_constructor_parameter::Reader<'_>,
+    ) -> Result<TypeValueConstructorParameter> {
+        let generic_type_parameter_index = match reader.get_generic_type_parameter_index() {
+            -1 => None,
+            index => Some(index as usize),
+        };
+        Ok(TypeValueConstructorParameter {
+            type_: self.type_(&reader.get_type()?)?,
+            generic_type_parameter_index,
+        })
     }
 
     fn value_constructor(
@@ -379,6 +410,7 @@ impl ModuleDecoder {
             location: self.src_span(&reader.get_location()?)?,
             literal: self.constant(&reader.get_literal()?)?,
             module: reader.get_module()?.into(),
+            supported_targets: self.supported_targets(reader.get_supported_targets()?),
         })
     }
 
@@ -408,7 +440,19 @@ impl ModuleDecoder {
             field_map: self.field_map(&reader.get_field_map()?)?,
             location: self.src_span(&reader.get_location()?)?,
             documentation: self.optional_string(reader.get_documentation()?),
+            supported_targets: self.supported_targets(reader.get_supported_targets()?),
         })
+    }
+
+    fn supported_targets(&self, reader: supported_targets::Reader<'_>) -> SupportedTargets {
+        let mut supported_targets = SupportedTargets::none();
+        if reader.get_erlang() {
+            supported_targets = supported_targets.add(Target::Erlang);
+        }
+        if reader.get_javascript() {
+            supported_targets = supported_targets.add(Target::JavaScript);
+        }
+        supported_targets
     }
 
     fn record(
@@ -423,6 +467,7 @@ impl ModuleDecoder {
             field_map: self.field_map(&reader.get_field_map()?)?,
             location: self.src_span(&reader.get_location()?)?,
             documentation: self.optional_string(reader.get_documentation()?),
+            constructor_index: reader.get_constructor_index(),
         })
     }
 

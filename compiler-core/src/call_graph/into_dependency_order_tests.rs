@@ -1,13 +1,17 @@
 use super::*;
 use crate::{
     ast::{Arg, Function},
-    type_::Deprecation,
+    type_::{expression::SupportedTargets, Deprecation},
 };
 use ecow::EcoString;
 
-type Input = (&'static str, &'static [&'static str], &'static str);
+type FuncInput = (&'static str, &'static [&'static str], &'static str);
+type ConstInput = (&'static str, &'static str);
 
-fn parse_and_order(functions: &[Input]) -> Result<Vec<Vec<EcoString>>, Error> {
+fn parse_and_order(
+    functions: &[FuncInput],
+    constants: &[ConstInput],
+) -> Result<Vec<Vec<EcoString>>, Error> {
     let functions = functions
         .iter()
         .map(|(name, arguments, src)| Function {
@@ -33,14 +37,36 @@ fn parse_and_order(functions: &[Input]) -> Result<Vec<Vec<EcoString>>, Error> {
             documentation: None,
             external_erlang: None,
             external_javascript: None,
+            supported_targets: SupportedTargets::all(),
         })
         .collect_vec();
-    Ok(into_dependency_order(functions)?
+    let constants = constants
+        .iter()
+        .map(|(name, value)| {
+            let const_value = crate::parse::parse_const_value(value).expect("syntax error");
+            ModuleConstant {
+                documentation: None,
+                location: Default::default(),
+                public: true,
+                name: EcoString::from(*name),
+                annotation: None,
+                value: Box::from(const_value),
+                supported_targets: SupportedTargets::all(),
+                type_: (),
+                deprecation: Deprecation::NotDeprecated,
+            }
+        })
+        .collect_vec();
+
+    Ok(into_dependency_order(functions, constants)?
         .into_iter()
         .map(|level| {
             level
                 .into_iter()
-                .map(|function| function.name.clone())
+                .map(|function| match function {
+                    CallGraphNode::Function(f) => f.name,
+                    CallGraphNode::ModuleConstant(c) => c.name,
+                })
                 .collect_vec()
         })
         .collect())
@@ -50,7 +76,7 @@ fn parse_and_order(functions: &[Input]) -> Result<Vec<Vec<EcoString>>, Error> {
 fn empty() {
     let functions = [];
     assert_eq!(
-        parse_and_order(functions.as_slice()).unwrap(),
+        parse_and_order(functions.as_slice(), [].as_slice()).unwrap(),
         Vec::<Vec<EcoString>>::new()
     );
 }
@@ -65,7 +91,7 @@ fn no_deps() {
         ("e", [].as_slice(), r#"todo"#),
     ];
     assert_eq!(
-        parse_and_order(functions.as_slice()).unwrap(),
+        parse_and_order(functions.as_slice(), [].as_slice()).unwrap(),
         vec![vec!["a"], vec!["b"], vec!["c"], vec!["d"], vec!["e"]]
     );
 }
@@ -78,7 +104,7 @@ fn one_dep() {
         ("c", [].as_slice(), r#"0"#),
     ];
     assert_eq!(
-        parse_and_order(functions.as_slice()).unwrap(),
+        parse_and_order(functions.as_slice(), [].as_slice()).unwrap(),
         vec![vec!["a"], vec!["c"], vec!["b"]]
     );
 }
@@ -91,7 +117,7 @@ fn unknown_vars() {
         ("c", [].as_slice(), r#"Ok"#),
     ];
     assert_eq!(
-        parse_and_order(functions.as_slice()).unwrap(),
+        parse_and_order(functions.as_slice(), [].as_slice()).unwrap(),
         vec![vec!["a"], vec!["b"], vec!["c"]]
     );
 }
@@ -104,7 +130,7 @@ fn calling_function() {
         ("c", [].as_slice(), "1"),
     ];
     assert_eq!(
-        parse_and_order(functions.as_slice()).unwrap(),
+        parse_and_order(functions.as_slice(), [].as_slice()).unwrap(),
         vec![vec!["c"], vec!["b"], vec!["a"]]
     );
 }
@@ -117,7 +143,7 @@ fn ref_in_call_argument() {
         ("c", [].as_slice(), "1"),
     ];
     assert_eq!(
-        parse_and_order(functions.as_slice()).unwrap(),
+        parse_and_order(functions.as_slice(), [].as_slice()).unwrap(),
         vec![vec!["b"], vec!["c"], vec!["a"]]
     );
 }
@@ -130,7 +156,7 @@ fn sequence() {
         ("c", [].as_slice(), "1"),
     ];
     assert_eq!(
-        parse_and_order(functions.as_slice()).unwrap(),
+        parse_and_order(functions.as_slice(), [].as_slice()).unwrap(),
         vec![vec!["b"], vec!["c"], vec!["a"]]
     );
 }
@@ -143,7 +169,7 @@ fn tuple() {
         ("c", [].as_slice(), "1"),
     ];
     assert_eq!(
-        parse_and_order(functions.as_slice()).unwrap(),
+        parse_and_order(functions.as_slice(), [].as_slice()).unwrap(),
         vec![vec!["b"], vec!["c"], vec!["a"]]
     );
 }
@@ -156,7 +182,7 @@ fn pipeline() {
         ("c", [].as_slice(), "1"),
     ];
     assert_eq!(
-        parse_and_order(functions.as_slice()).unwrap(),
+        parse_and_order(functions.as_slice(), [].as_slice()).unwrap(),
         vec![vec!["b"], vec!["c"], vec!["a"]]
     );
 }
@@ -169,7 +195,7 @@ fn list() {
         ("c", [].as_slice(), "1"),
     ];
     assert_eq!(
-        parse_and_order(functions.as_slice()).unwrap(),
+        parse_and_order(functions.as_slice(), [].as_slice()).unwrap(),
         vec![vec!["b"], vec!["c"], vec!["a"]]
     );
 }
@@ -182,7 +208,7 @@ fn list_spread() {
         ("c", [].as_slice(), "1"),
     ];
     assert_eq!(
-        parse_and_order(functions.as_slice()).unwrap(),
+        parse_and_order(functions.as_slice(), [].as_slice()).unwrap(),
         vec![vec!["b"], vec!["c"], vec!["a"]]
     );
 }
@@ -195,7 +221,7 @@ fn record_access() {
         ("c", [].as_slice(), r#"123"#),
     ];
     assert_eq!(
-        parse_and_order(functions.as_slice()).unwrap(),
+        parse_and_order(functions.as_slice(), [].as_slice()).unwrap(),
         vec![vec!["a"], vec!["b"], vec!["c"]]
     );
 }
@@ -208,7 +234,7 @@ fn binop() {
         ("c", [].as_slice(), "1"),
     ];
     assert_eq!(
-        parse_and_order(functions.as_slice()).unwrap(),
+        parse_and_order(functions.as_slice(), [].as_slice()).unwrap(),
         vec![vec!["b"], vec!["a"], vec!["c"]]
     );
 }
@@ -221,7 +247,7 @@ fn bit_arrays() {
         ("c", [].as_slice(), "1"),
     ];
     assert_eq!(
-        parse_and_order(functions.as_slice()).unwrap(),
+        parse_and_order(functions.as_slice(), [].as_slice()).unwrap(),
         vec![vec!["b"], vec!["c"], vec!["a"]]
     );
 }
@@ -234,7 +260,7 @@ fn tuple_index() {
         ("c", [].as_slice(), "1"),
     ];
     assert_eq!(
-        parse_and_order(functions.as_slice()).unwrap(),
+        parse_and_order(functions.as_slice(), [].as_slice()).unwrap(),
         vec![vec!["b"], vec!["a"], vec!["c"]]
     );
 }
@@ -247,7 +273,7 @@ fn record_update() {
         ("c", [].as_slice(), "1"),
     ];
     assert_eq!(
-        parse_and_order(functions.as_slice()).unwrap(),
+        parse_and_order(functions.as_slice(), [].as_slice()).unwrap(),
         vec![vec!["b"], vec!["c"], vec!["a"]]
     );
 }
@@ -260,7 +286,7 @@ fn negate() {
         ("c", [].as_slice(), "1"),
     ];
     assert_eq!(
-        parse_and_order(functions.as_slice()).unwrap(),
+        parse_and_order(functions.as_slice(), [].as_slice()).unwrap(),
         vec![vec!["b"], vec!["c"], vec!["a"]]
     );
 }
@@ -273,7 +299,7 @@ fn use_() {
         ("c", [].as_slice(), "1"),
     ];
     assert_eq!(
-        parse_and_order(functions.as_slice()).unwrap(),
+        parse_and_order(functions.as_slice(), [].as_slice()).unwrap(),
         vec![vec!["b"], vec!["c"], vec!["a"]]
     );
 }
@@ -286,7 +312,7 @@ fn use_shadowing() {
         ("c", [].as_slice(), "1"),
     ];
     assert_eq!(
-        parse_and_order(functions.as_slice()).unwrap(),
+        parse_and_order(functions.as_slice(), [].as_slice()).unwrap(),
         vec![vec!["a"], vec!["b"], vec!["c"]]
     );
 }
@@ -299,7 +325,7 @@ fn fn_argument_shadowing() {
         ("c", [].as_slice(), "1"),
     ];
     assert_eq!(
-        parse_and_order(functions.as_slice()).unwrap(),
+        parse_and_order(functions.as_slice(), [].as_slice()).unwrap(),
         vec![vec!["b"], vec!["c"], vec!["a"]]
     );
 }
@@ -312,7 +338,7 @@ fn fn_argument_shadowing_then_not() {
         ("c", [].as_slice(), "1"),
     ];
     assert_eq!(
-        parse_and_order(functions.as_slice()).unwrap(),
+        parse_and_order(functions.as_slice(), [].as_slice()).unwrap(),
         vec![vec!["b"], vec!["c"], vec!["a"]]
     );
 }
@@ -325,7 +351,7 @@ fn let_var() {
         ("c", [].as_slice(), "1"),
     ];
     assert_eq!(
-        parse_and_order(functions.as_slice()).unwrap(),
+        parse_and_order(functions.as_slice(), [].as_slice()).unwrap(),
         vec![vec!["b"], vec!["a"], vec!["c"]]
     );
 }
@@ -334,7 +360,7 @@ fn let_var() {
 fn pattern_int() {
     let functions = [("a", [].as_slice(), r#"{ let 1 = x }"#)];
     assert_eq!(
-        parse_and_order(functions.as_slice()).unwrap(),
+        parse_and_order(functions.as_slice(), [].as_slice()).unwrap(),
         vec![vec!["a"]]
     );
 }
@@ -343,7 +369,7 @@ fn pattern_int() {
 fn pattern_float() {
     let functions = [("a", [].as_slice(), r#"{ let 1.0 = x }"#)];
     assert_eq!(
-        parse_and_order(functions.as_slice()).unwrap(),
+        parse_and_order(functions.as_slice(), [].as_slice()).unwrap(),
         vec![vec!["a"]]
     );
 }
@@ -352,7 +378,7 @@ fn pattern_float() {
 fn pattern_string() {
     let functions = [("a", [].as_slice(), r#"{ let "1.0" = x }"#)];
     assert_eq!(
-        parse_and_order(functions.as_slice()).unwrap(),
+        parse_and_order(functions.as_slice(), [].as_slice()).unwrap(),
         vec![vec!["a"]]
     );
 }
@@ -361,7 +387,7 @@ fn pattern_string() {
 fn pattern_underscore() {
     let functions = [("a", [].as_slice(), r#"{ let _ = x }"#)];
     assert_eq!(
-        parse_and_order(functions.as_slice()).unwrap(),
+        parse_and_order(functions.as_slice(), [].as_slice()).unwrap(),
         vec![vec!["a"]]
     );
 }
@@ -374,7 +400,7 @@ fn pattern_concat() {
         ("c", [].as_slice(), "1"),
     ];
     assert_eq!(
-        parse_and_order(functions.as_slice()).unwrap(),
+        parse_and_order(functions.as_slice(), [].as_slice()).unwrap(),
         vec![vec!["b"], vec!["a"], vec!["c"]]
     );
 }
@@ -387,7 +413,7 @@ fn pattern_tuple() {
         ("c", [].as_slice(), "1"),
     ];
     assert_eq!(
-        parse_and_order(functions.as_slice()).unwrap(),
+        parse_and_order(functions.as_slice(), [].as_slice()).unwrap(),
         vec![vec!["b"], vec!["a"], vec!["c"]]
     );
 }
@@ -400,7 +426,7 @@ fn pattern_list() {
         ("c", [].as_slice(), "1"),
     ];
     assert_eq!(
-        parse_and_order(functions.as_slice()).unwrap(),
+        parse_and_order(functions.as_slice(), [].as_slice()).unwrap(),
         vec![vec!["b"], vec!["a"], vec!["c"]]
     );
 }
@@ -413,7 +439,7 @@ fn pattern_list_spread() {
         ("c", [].as_slice(), "1"),
     ];
     assert_eq!(
-        parse_and_order(functions.as_slice()).unwrap(),
+        parse_and_order(functions.as_slice(), [].as_slice()).unwrap(),
         vec![vec!["b"], vec!["a"], vec!["c"]]
     );
 }
@@ -430,7 +456,7 @@ fn pattern_bit_array_segment_size_var_usage() {
         ("c", [].as_slice(), "1"),
     ];
     assert_eq!(
-        parse_and_order(functions.as_slice()).unwrap(),
+        parse_and_order(functions.as_slice(), [].as_slice()).unwrap(),
         vec![vec!["b"], vec!["c"], vec!["a"]]
     );
 }
@@ -443,7 +469,7 @@ fn pattern_assign() {
         ("c", [].as_slice(), "1"),
     ];
     assert_eq!(
-        parse_and_order(functions.as_slice()).unwrap(),
+        parse_and_order(functions.as_slice(), [].as_slice()).unwrap(),
         vec![vec!["b"], vec!["c"], vec!["a"]]
     );
 }
@@ -456,7 +482,7 @@ fn pattern_constructor() {
         ("c", [].as_slice(), "1"),
     ];
     assert_eq!(
-        parse_and_order(functions.as_slice()).unwrap(),
+        parse_and_order(functions.as_slice(), [].as_slice()).unwrap(),
         vec![vec!["b"], vec!["c"], vec!["a"]]
     );
 }
@@ -469,7 +495,7 @@ fn scope_reset() {
         ("c", [].as_slice(), "1"),
     ];
     assert_eq!(
-        parse_and_order(functions.as_slice()).unwrap(),
+        parse_and_order(functions.as_slice(), [].as_slice()).unwrap(),
         vec![vec!["b"], vec!["a"], vec!["c"]]
     );
 }
@@ -482,7 +508,7 @@ fn case_subject() {
         ("c", [].as_slice(), "1"),
     ];
     assert_eq!(
-        parse_and_order(functions.as_slice()).unwrap(),
+        parse_and_order(functions.as_slice(), [].as_slice()).unwrap(),
         vec![vec!["b"], vec!["a"], vec!["c"]]
     );
 }
@@ -495,7 +521,7 @@ fn case_subjects() {
         ("c", [].as_slice(), "1"),
     ];
     assert_eq!(
-        parse_and_order(functions.as_slice()).unwrap(),
+        parse_and_order(functions.as_slice(), [].as_slice()).unwrap(),
         vec![vec!["b"], vec!["c"], vec!["a"]]
     );
 }
@@ -508,7 +534,7 @@ fn case_pattern_shadow() {
         ("c", [].as_slice(), "1"),
     ];
     assert_eq!(
-        parse_and_order(functions.as_slice()).unwrap(),
+        parse_and_order(functions.as_slice(), [].as_slice()).unwrap(),
         vec![vec!["a"], vec!["b"], vec!["c"]]
     );
 }
@@ -521,7 +547,7 @@ fn case_use_in_clause() {
         ("c", [].as_slice(), "1"),
     ];
     assert_eq!(
-        parse_and_order(functions.as_slice()).unwrap(),
+        parse_and_order(functions.as_slice(), [].as_slice()).unwrap(),
         vec![vec!["b"], vec!["a"], vec!["c"]]
     );
 }
@@ -534,7 +560,7 @@ fn case_clause_doesnt_shadow_later_clauses() {
         ("c", [].as_slice(), "1"),
     ];
     assert_eq!(
-        parse_and_order(functions.as_slice()).unwrap(),
+        parse_and_order(functions.as_slice(), [].as_slice()).unwrap(),
         vec![vec!["b"], vec!["a"], vec!["c"]]
     );
 }
@@ -547,7 +573,7 @@ fn case_clause_doesnt_shadow_after() {
         ("c", [].as_slice(), "1"),
     ];
     assert_eq!(
-        parse_and_order(functions.as_slice()).unwrap(),
+        parse_and_order(functions.as_slice(), [].as_slice()).unwrap(),
         vec![vec!["b"], vec!["a"], vec!["c"]]
     );
 }
@@ -560,7 +586,7 @@ fn guard() {
         ("c", [].as_slice(), "1"),
     ];
     assert_eq!(
-        parse_and_order(functions.as_slice()).unwrap(),
+        parse_and_order(functions.as_slice(), [].as_slice()).unwrap(),
         vec![vec!["b"], vec!["a"], vec!["c"]]
     );
 }
@@ -577,7 +603,7 @@ fn big_guard() {
         ("c", [].as_slice(), "1"),
     ];
     assert_eq!(
-        parse_and_order(functions.as_slice()).unwrap(),
+        parse_and_order(functions.as_slice(), [].as_slice()).unwrap(),
         vec![vec!["b"], vec!["a"], vec!["c"]]
     );
 }
@@ -585,7 +611,7 @@ fn big_guard() {
 #[test]
 fn duplicate_external_function_name() {
     let functions = [("c", [].as_slice(), "1"), ("c", [].as_slice(), "1")];
-    _ = parse_and_order(functions.as_slice()).unwrap_err();
+    _ = parse_and_order(functions.as_slice(), [].as_slice()).unwrap_err();
 }
 
 #[test]
@@ -594,7 +620,7 @@ fn duplicate_function_name() {
         ("b", [].as_slice(), r#"123456"#),
         ("b", [].as_slice(), r#"123456"#),
     ];
-    _ = parse_and_order(functions.as_slice()).unwrap_err();
+    _ = parse_and_order(functions.as_slice(), [].as_slice()).unwrap_err();
 }
 
 #[test]
@@ -605,7 +631,7 @@ fn more_complex_cycle() {
         ("a3", [].as_slice(), r#"{ a1 }"#),
     ];
     assert_eq!(
-        parse_and_order(functions.as_slice()).unwrap(),
+        parse_and_order(functions.as_slice(), [].as_slice()).unwrap(),
         vec![vec!["a2", "a1"], vec!["a3"]]
     );
 }
@@ -617,8 +643,21 @@ fn function_argument_shadowing() {
         ("b", [].as_slice(), r#"Nil"#),
     ];
     assert_eq!(
-        parse_and_order(functions.as_slice()).unwrap(),
+        parse_and_order(functions.as_slice(), [].as_slice()).unwrap(),
         vec![vec!["a"], vec!["b"]]
+    );
+}
+
+#[test]
+fn constants_and_functions() {
+    let functions = [
+        ("a", ["b"].as_slice(), r#"b"#),
+        ("b", [].as_slice(), r#"c"#),
+    ];
+    let constants = [("d", r#"c"#), ("c", r#"a"#)];
+    assert_eq!(
+        parse_and_order(functions.as_slice(), constants.as_slice()).unwrap(),
+        vec![vec!["a"], vec!["c"], vec!["b"], vec!["d"]]
     );
 }
 
@@ -630,7 +669,7 @@ fn bug_2275() {
         ("two", [].as_slice(), r#"two"#),
     ];
     assert_eq!(
-        parse_and_order(functions.as_slice()).unwrap(),
+        parse_and_order(functions.as_slice(), [].as_slice()).unwrap(),
         vec![vec!["two"], vec!["one"]]
     );
 }

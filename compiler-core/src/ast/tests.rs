@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
+use crate::analyse::TargetSupport;
 use crate::build::Target;
+use crate::type_::expression::SupportedTargets;
 use crate::type_::{Deprecation, PRELUDE_MODULE_NAME};
 use crate::{
     ast::{SrcSpan, TypedExpr},
@@ -35,6 +37,7 @@ fn compile_module(src: &str) -> TypedModule {
         &modules,
         &TypeWarningEmitter::null(),
         &std::collections::HashMap::new(),
+        TargetSupport::Enforced,
     )
     .expect("should successfully infer")
 }
@@ -59,7 +62,14 @@ fn compile_expression(src: &str) -> TypedStatement {
     // place.
     let _ = modules.insert(PRELUDE_MODULE_NAME.into(), type_::build_prelude(&ids));
     let emitter = TypeWarningEmitter::null();
-    let mut environment = Environment::new(ids, "mymod".into(), Target::Erlang, &modules, &emitter);
+    let mut environment = Environment::new(
+        ids,
+        "mymod".into(),
+        Target::Erlang,
+        &modules,
+        &emitter,
+        TargetSupport::Enforced,
+    );
 
     // Insert a cat record to use in the tests
     let cat_type = Arc::new(Type::Named {
@@ -79,6 +89,7 @@ fn compile_expression(src: &str) -> TypedStatement {
             fields: [("name".into(), 0), ("age".into(), 1)].into(),
         }),
         module: "mymod".into(),
+        constructor_index: 0,
     };
     environment.insert_variable(
         "Cat".into(),
@@ -114,7 +125,7 @@ fn compile_expression(src: &str) -> TypedStatement {
             .into(),
         },
     );
-    ExprTyper::new(&mut environment)
+    ExprTyper::new(&mut environment, SupportedTargets::none())
         .infer_statements(ast)
         .expect("should successfully infer")
         .first()
@@ -477,6 +488,7 @@ fn find_node_bool() {
                 field_map: None,
                 location: SrcSpan { start: 0, end: 0 },
                 module: PRELUDE_MODULE_NAME.into(),
+                constructor_index: 0,
             },
             type_: type_::bool(),
         },

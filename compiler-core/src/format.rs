@@ -10,7 +10,7 @@ use crate::{
     docvec,
     io::Utf8Writer,
     parse::extra::{Comment, ModuleExtra},
-    pretty::*,
+    pretty::{self, *},
     type_::{self, Type},
     Error, Result,
 };
@@ -527,15 +527,14 @@ impl<'comments> Formatter<'comments> {
         let signature = match &function.return_annotation {
             Some(anno) => signature.append(" -> ").append(self.type_ast(anno)),
             None => signature,
-        }
-        .group();
-
-        let head = attributes.append(signature);
+        };
 
         let body = &function.body;
         if body.len() == 1 && body.first().is_placeholder() {
-            return head;
+            return attributes.append(signature.group());
         }
+
+        let head = attributes.append(signature);
 
         // Format body
         let body = self.statements(body);
@@ -548,6 +547,7 @@ impl<'comments> Formatter<'comments> {
 
         // Stick it all together
         head.append(" {")
+            .group()
             .append(line().append(body).nest(INDENT).group())
             .append(line())
             .append("}")
@@ -631,7 +631,7 @@ impl<'comments> Formatter<'comments> {
 
             UntypedExpr::Panic {
                 message: Some(m), ..
-            } => docvec!["panic as \"", m, "\""],
+            } => docvec!["panic as ", self.expr(m)],
 
             UntypedExpr::Panic { .. } => "panic".to_doc(),
 
@@ -639,7 +639,7 @@ impl<'comments> Formatter<'comments> {
 
             UntypedExpr::Todo {
                 message: Some(l), ..
-            } => docvec!["todo as \"", l, "\""],
+            } => docvec!["todo as ", self.expr(l)],
 
             UntypedExpr::PipeLine { expressions, .. } => self.pipeline(expressions),
 
@@ -649,7 +649,11 @@ impl<'comments> Formatter<'comments> {
 
             UntypedExpr::String { value, .. } => self.string(value),
 
-            UntypedExpr::Block { statements, .. } => self.block(statements),
+            UntypedExpr::Block {
+                statements,
+                location,
+                ..
+            } => self.block(location, statements, false),
 
             UntypedExpr::Var { name, .. } if name == CAPTURE_VARIABLE => "_".to_doc(),
 
@@ -700,10 +704,7 @@ impl<'comments> Formatter<'comments> {
             .append(".")
             .append(label.as_str()),
 
-            UntypedExpr::Tuple { elems, .. } => "#"
-                .to_doc()
-                .append(wrap_args(elems.iter().map(|e| self.expr(e))))
-                .group(),
+            UntypedExpr::Tuple { elems, .. } => self.tuple(elems),
 
             UntypedExpr::BitArray { segments, .. } => bit_array(
                 segments
@@ -727,6 +728,22 @@ impl<'comments> Formatter<'comments> {
             doc.force_break()
         } else {
             doc
+        }
+    }
+
+    fn bin_op_string<'a>(&self, string: &'a EcoString) -> Document<'a> {
+        let lines = string.split('\n').collect_vec();
+        match lines.as_slice() {
+            [] | [_] => string.to_doc().surround("\"", "\""),
+            [first_line, lines @ ..] => {
+                let mut doc = docvec!("\"", first_line);
+                for line in lines {
+                    doc = doc
+                        .append(pretty::line().set_nesting(0))
+                        .append(line.to_doc())
+                }
+                doc.append("\"".to_doc()).group()
+            }
         }
     }
 
@@ -868,16 +885,58 @@ impl<'comments> Formatter<'comments> {
             | UntypedExpr::NegateInt { .. } => self.expr(fun),
         };
 
-        match args {
-            [arg] if is_breakable_expr(&arg.value) && !self.any_comments(arg.location.start) => {
-                expr.append("(")
-                    .append(self.call_arg(arg))
-                    .append(")")
+        self.append_inlinable_wrapped_args(
+            expr,
+            args,
+            |arg| &arg.value,
+            |self_, arg| self_.call_arg(arg),
+        )
+    }
+
+    fn tuple<'a>(&mut self, elements: &'a [UntypedExpr]) -> Document<'a> {
+        self.append_inlinable_wrapped_args("#".to_doc(), elements, |e| e, |self_, e| self_.expr(e))
+    }
+
+    // Appends to the given docs a comma-separated list of documents wrapped by
+    // parentheses. If the last item of the argument list is splittable the
+    // resulting document will try to first split that before splitting all the
+    // other arguments.
+    // This is used for function calls and tuples.
+    fn append_inlinable_wrapped_args<'a, T, ToExpr, ToDoc>(
+        &mut self,
+        doc: Document<'a>,
+        values: &'a [T],
+        to_expr: ToExpr,
+        to_doc: ToDoc,
+    ) -> Document<'a>
+    where
+        T: HasLocation,
+        ToExpr: Fn(&T) -> &UntypedExpr,
+        ToDoc: Fn(&mut Self, &'a T) -> Document<'a>,
+    {
+        match init_and_last(values) {
+            Some((initial_values, last_value))
+                if is_breakable_argument(to_expr(last_value), values.len())
+                    && !self.any_comments(last_value.location().start) =>
+            {
+                let last_value_doc = to_doc(self, last_value)
                     .group()
+                    .next_break_fits(NextBreakFitsMode::Enabled);
+
+                doc.append(wrap_function_call_args(
+                    initial_values
+                        .iter()
+                        .map(|value| to_doc(self, value))
+                        .chain(std::iter::once(last_value_doc)),
+                ))
+                .next_break_fits(NextBreakFitsMode::Disabled)
+                .group()
             }
 
-            _ => expr
-                .append(wrap_args(args.iter().map(|a| self.call_arg(a))).group())
+            Some(_) | None => doc
+                .append(wrap_function_call_args(
+                    values.iter().map(|value| to_doc(self, value)),
+                ))
                 .group(),
         }
     }
@@ -932,17 +991,38 @@ impl<'comments> Formatter<'comments> {
         left: &'a UntypedExpr,
         right: &'a UntypedExpr,
     ) -> Document<'a> {
-        let precedence = name.precedence();
-        let left_precedence = left.binop_precedence();
-        let right_precedence = right.binop_precedence();
-        let left = self.expr(left);
-        let right = self.expr(right);
-        self.operator_side(left, precedence, left_precedence)
+        self.binop_side(name, left)
+            .append(break_("", " "))
             .append(name)
-            .append(self.operator_side(right, precedence, right_precedence - 1))
+            .append(" ")
+            .append(self.binop_side(name, right))
     }
 
-    pub fn operator_side<'a>(&mut self, doc: Document<'a>, op: u8, side: u8) -> Document<'a> {
+    fn binop_side<'a>(&mut self, operator: &'a BinOp, side: &'a UntypedExpr) -> Document<'a> {
+        let side_doc = match side {
+            UntypedExpr::String { value, .. } => self.bin_op_string(value),
+            _ => self.expr(side),
+        };
+        match side.binop_name() {
+            // In case the other side is a binary operation as well and it can
+            // be grouped together with the current binary operation, the two
+            // docs are simply concatenated, so that they will end up in the
+            // same group and the formatter will try to keep those on a single
+            // line.
+            Some(side_name) if side_name.can_be_grouped_with(operator) => side_doc,
+            // In case the binary operations cannot be grouped together the
+            // other side is treated as a group on its own so that it can be
+            // broken independently of other pieces of the binary operations
+            // chain.
+            _ => self.operator_side(
+                side_doc.group(),
+                operator.precedence(),
+                side.binop_precedence(),
+            ),
+        }
+    }
+
+    pub fn operator_side<'a>(&self, doc: Document<'a>, op: u8, side: u8) -> Document<'a> {
         if op > side {
             wrap_block(doc).group()
         } else {
@@ -954,7 +1034,7 @@ impl<'comments> Formatter<'comments> {
         let mut docs = Vec::with_capacity(expressions.len() * 3);
         let first = expressions.first();
         let first_precedence = first.binop_precedence();
-        let first = self.expr(first);
+        let first = self.expr(first).group();
         docs.push(self.operator_side(first, 5, first_precedence));
 
         for expr in expressions.iter().skip(1) {
@@ -1186,7 +1266,10 @@ impl<'comments> Formatter<'comments> {
             ),
             None => nil(),
         }
-        .append(self.expr(&arg.value))
+        .append(match &arg.value {
+            UntypedExpr::BinOp { .. } => self.expr(&arg.value).group().nest(INDENT),
+            _ => self.expr(&arg.value).group(),
+        })
     }
 
     fn record_update_arg<'a>(&mut self, arg: &'a UntypedRecordUpdateArg) -> Document<'a> {
@@ -1218,17 +1301,15 @@ impl<'comments> Formatter<'comments> {
 
             UntypedExpr::Case { .. } => line().append(self.expr(expr)).nest(INDENT),
 
-            UntypedExpr::Block { statements, .. } => {
-                docvec![
-                    " {",
-                    docvec![line(), self.statements(statements)].nest(INDENT),
-                    line(),
-                    "}"
-                ]
-            }
+            UntypedExpr::Block {
+                statements,
+                location,
+                ..
+            } => " ".to_doc().append(self.block(location, statements, true)),
 
-            _ => break_("", " ").append(self.expr(expr)).nest(INDENT),
+            _ => break_("", " ").append(self.expr(expr).group()).nest(INDENT),
         }
+        .next_break_fits(NextBreakFitsMode::Disabled)
         .group()
     }
 
@@ -1285,7 +1366,8 @@ impl<'comments> Formatter<'comments> {
         } else {
             break_(",", ", ")
         };
-        let elements = join(elements.iter().map(|e| self.expr(e)), comma);
+        let elements = join(elements.iter().map(|e| self.expr(e).group()), comma)
+            .next_break_fits(NextBreakFitsMode::Disabled);
 
         let doc = break_("[", "[").append(elements);
 
@@ -1314,7 +1396,7 @@ impl<'comments> Formatter<'comments> {
 
             Pattern::String { value, .. } => self.string(value),
 
-            Pattern::Var { name, .. } => name.to_doc(),
+            Pattern::Variable { name, .. } => name.to_doc(),
 
             Pattern::VarUsage { name, .. } => name.to_doc(),
 
@@ -1346,16 +1428,21 @@ impl<'comments> Formatter<'comments> {
                 false,
             ),
 
-            Pattern::Concatenate {
+            Pattern::StringPrefix {
                 left_side_string: left,
                 right_side_assignment: right,
+                left_side_assignment: left_assign,
                 ..
             } => {
+                let left = self.string(left);
                 let right = match right {
                     AssignName::Variable(name) => name.to_doc(),
                     AssignName::Discard(name) => name.to_doc(),
                 };
-                docvec![self.string(left), " <> ", right]
+                match left_assign {
+                    Some((name, _)) => docvec![left, " as ", name, " <> ", right],
+                    None => docvec![left, " <> ", right],
+                }
             }
         };
         commented(doc, comments)
@@ -1578,14 +1665,43 @@ impl<'comments> Formatter<'comments> {
         }
     }
 
-    fn block<'a>(&mut self, statements: &'a Vec1<UntypedStatement>) -> Document<'a> {
-        docvec![
-            "{",
-            docvec![break_("", " "), self.statements(statements)].nest(INDENT),
-            break_("", " "),
-            "}"
-        ]
-        .group()
+    fn block<'a>(
+        &mut self,
+        location: &SrcSpan,
+        statements: &'a Vec1<UntypedStatement>,
+        force_breaks: bool,
+    ) -> Document<'a> {
+        let statements_doc = docvec![break_("", " "), self.statements(statements)].nest(INDENT);
+        let trailing_comments = self.pop_comments(location.end);
+        let trailing_comments = printed_comments(trailing_comments, false);
+        let block_doc = match trailing_comments {
+            Some(trailing_comments_doc) => docvec![
+                "{",
+                statements_doc,
+                line().nest(INDENT),
+                trailing_comments_doc.nest(INDENT),
+                line(),
+                "}"
+            ]
+            .force_break(),
+            None => docvec!["{", statements_doc, break_("", " "), "}"],
+        };
+
+        if force_breaks {
+            block_doc.force_break().group()
+        } else {
+            block_doc.group()
+        }
+    }
+}
+
+fn init_and_last<T>(vec: &[T]) -> Option<(&[T], &T)> {
+    match vec {
+        [] => None,
+        _ => match vec.split_at(vec.len() - 1) {
+            (init, [last]) => Some((init, last)),
+            _ => panic!("unreachable"),
+        },
     }
 }
 
@@ -1620,28 +1736,28 @@ impl<'a> Documentable<'a> for &'a UnqualifiedImport {
 impl<'a> Documentable<'a> for &'a BinOp {
     fn to_doc(self) -> Document<'a> {
         match self {
-            BinOp::And => " && ",
-            BinOp::Or => " || ",
-            BinOp::LtInt => " < ",
-            BinOp::LtEqInt => " <= ",
-            BinOp::LtFloat => " <. ",
-            BinOp::LtEqFloat => " <=. ",
-            BinOp::Eq => " == ",
-            BinOp::NotEq => " != ",
-            BinOp::GtEqInt => " >= ",
-            BinOp::GtInt => " > ",
-            BinOp::GtEqFloat => " >=. ",
-            BinOp::GtFloat => " >. ",
-            BinOp::AddInt => " + ",
-            BinOp::AddFloat => " +. ",
-            BinOp::SubInt => " - ",
-            BinOp::SubFloat => " -. ",
-            BinOp::MultInt => " * ",
-            BinOp::MultFloat => " *. ",
-            BinOp::DivInt => " / ",
-            BinOp::DivFloat => " /. ",
-            BinOp::RemainderInt => " % ",
-            BinOp::Concatenate => " <> ",
+            BinOp::And => "&&",
+            BinOp::Or => "||",
+            BinOp::LtInt => "<",
+            BinOp::LtEqInt => "<=",
+            BinOp::LtFloat => "<.",
+            BinOp::LtEqFloat => "<=.",
+            BinOp::Eq => "==",
+            BinOp::NotEq => "!=",
+            BinOp::GtEqInt => ">=",
+            BinOp::GtInt => ">",
+            BinOp::GtEqFloat => ">=.",
+            BinOp::GtFloat => ">.",
+            BinOp::AddInt => "+",
+            BinOp::AddFloat => "+.",
+            BinOp::SubInt => "-",
+            BinOp::SubFloat => "-.",
+            BinOp::MultInt => "*",
+            BinOp::MultFloat => "*.",
+            BinOp::DivInt => "/",
+            BinOp::DivFloat => "/.",
+            BinOp::RemainderInt => "%",
+            BinOp::Concatenate => "<>",
         }
         .to_doc()
     }
@@ -1672,7 +1788,7 @@ where
         return "()".to_doc();
     }
     break_("(", "(")
-        .append(join(args, break_(",", ", ")))
+        .append(join(args, break_(",", ", ")).next_break_fits(NextBreakFitsMode::Disabled))
         .nest(INDENT)
         .append(break_(",", ""))
         .append(")")
@@ -1692,6 +1808,26 @@ where
         .append(break_(",", ", "))
         .append("..")
         .nest(INDENT)
+        .append(break_(",", ""))
+        .append(")")
+        .group()
+}
+
+pub fn wrap_function_call_args<'a, I>(args: I) -> Document<'a>
+where
+    I: IntoIterator<Item = Document<'a>>,
+{
+    let mut args = args.into_iter().peekable();
+    if args.peek().is_none() {
+        return "()".to_doc();
+    }
+
+    let args_doc = break_("", "")
+        .append(join(args, break_(",", ", ")))
+        .nest_if_broken(INDENT);
+
+    "(".to_doc()
+        .append(args_doc)
         .append(break_(",", ""))
         .append(")")
         .group()
@@ -1791,8 +1927,8 @@ where
     ToDoc: FnMut(&Value) -> Document<'_>,
 {
     match option {
-        BitArrayOption::Binary { .. } | BitArrayOption::Bytes { .. } => "bytes".to_doc(),
-        BitArrayOption::BitString { .. } | BitArrayOption::Bits { .. } => "bits".to_doc(),
+        BitArrayOption::Bytes { .. } => "bytes".to_doc(),
+        BitArrayOption::Bits { .. } => "bits".to_doc(),
         BitArrayOption::Int { .. } => "int".to_doc(),
         BitArrayOption::Float { .. } => "float".to_doc(),
         BitArrayOption::Utf8 { .. } => "utf8".to_doc(),
@@ -1890,4 +2026,19 @@ fn is_breakable_expr(expr: &UntypedExpr) -> bool {
             | UntypedExpr::Tuple { .. }
             | UntypedExpr::BitArray { .. }
     )
+}
+
+fn is_breakable_argument(expr: &UntypedExpr, arity: usize) -> bool {
+    match expr {
+        // A call is only breakable if it is the only argument
+        UntypedExpr::Call { .. } => arity == 1,
+
+        UntypedExpr::Fn { .. }
+        | UntypedExpr::Block { .. }
+        | UntypedExpr::Case { .. }
+        | UntypedExpr::List { .. }
+        | UntypedExpr::Tuple { .. }
+        | UntypedExpr::BitArray { .. } => true,
+        _ => false,
+    }
 }

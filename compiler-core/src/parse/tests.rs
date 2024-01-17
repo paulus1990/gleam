@@ -1,5 +1,7 @@
 use crate::ast::SrcSpan;
-use crate::parse::error::{LexicalError, LexicalErrorType, ParseError, ParseErrorType};
+use crate::parse::error::{
+    InvalidUnicodeEscapeError, LexicalError, LexicalErrorType, ParseError, ParseErrorType,
+};
 use camino::Utf8PathBuf;
 
 use pretty_assertions::assert_eq;
@@ -133,8 +135,7 @@ fn int_tests() {
 }
 
 #[test]
-fn string() {
-    // bad character escape
+fn string_bad_character_escape() {
     assert_error!(
         r#""\g""#,
         ParseError {
@@ -150,8 +151,7 @@ fn string() {
 }
 
 #[test]
-fn string2() {
-    // still bad character escape
+fn string_bad_character_escape_leading_backslash() {
     assert_error!(
         r#""\\\g""#,
         ParseError {
@@ -162,6 +162,132 @@ fn string2() {
                 }
             },
             location: SrcSpan { start: 3, end: 4 },
+        }
+    );
+}
+
+#[test]
+fn string_freestanding_unicode_escape_sequence() {
+    assert_error!(
+        r#""\u""#,
+        ParseError {
+            error: ParseErrorType::LexError {
+                error: LexicalError {
+                    error: LexicalErrorType::InvalidUnicodeEscape(
+                        InvalidUnicodeEscapeError::MissingOpeningBrace,
+                    ),
+                    location: SrcSpan { start: 2, end: 3 },
+                }
+            },
+            location: SrcSpan { start: 2, end: 3 },
+        }
+    );
+}
+
+#[test]
+fn string_unicode_escape_sequence_no_braces() {
+    assert_error!(
+        r#""\u65""#,
+        ParseError {
+            error: ParseErrorType::LexError {
+                error: LexicalError {
+                    error: LexicalErrorType::InvalidUnicodeEscape(
+                        InvalidUnicodeEscapeError::MissingOpeningBrace,
+                    ),
+                    location: SrcSpan { start: 2, end: 3 },
+                }
+            },
+            location: SrcSpan { start: 2, end: 3 },
+        }
+    );
+}
+
+#[test]
+fn string_unicode_escape_sequence_invalid_hex() {
+    assert_error!(
+        r#""\u{z}""#,
+        ParseError {
+            error: ParseErrorType::LexError {
+                error: LexicalError {
+                    error: LexicalErrorType::InvalidUnicodeEscape(
+                        InvalidUnicodeEscapeError::ExpectedHexDigitOrCloseBrace,
+                    ),
+                    location: SrcSpan { start: 4, end: 5 },
+                }
+            },
+            location: SrcSpan { start: 4, end: 5 },
+        }
+    );
+}
+
+#[test]
+fn string_unclosed_unicode_escape_sequence() {
+    assert_error!(
+        r#""\u{039a""#,
+        ParseError {
+            error: ParseErrorType::LexError {
+                error: LexicalError {
+                    error: LexicalErrorType::InvalidUnicodeEscape(
+                        InvalidUnicodeEscapeError::ExpectedHexDigitOrCloseBrace,
+                    ),
+                    location: SrcSpan { start: 8, end: 9 },
+                }
+            },
+            location: SrcSpan { start: 8, end: 9 },
+        }
+    );
+}
+
+#[test]
+fn string_empty_unicode_escape_sequence() {
+    assert_error!(
+        r#""\u{}""#,
+        ParseError {
+            error: ParseErrorType::LexError {
+                error: LexicalError {
+                    error: LexicalErrorType::InvalidUnicodeEscape(
+                        InvalidUnicodeEscapeError::InvalidNumberOfHexDigits,
+                    ),
+                    location: SrcSpan { start: 1, end: 5 },
+                }
+            },
+            location: SrcSpan { start: 1, end: 5 },
+        }
+    );
+}
+
+#[test]
+fn string_overlong_unicode_escape_sequence() {
+    assert_error!(
+        r#""\u{0011f601}""#,
+        ParseError {
+            error: ParseErrorType::LexError {
+                error: LexicalError {
+                    error: LexicalErrorType::InvalidUnicodeEscape(
+                        InvalidUnicodeEscapeError::InvalidNumberOfHexDigits,
+                    ),
+                    location: SrcSpan { start: 1, end: 13 },
+                }
+            },
+            location: SrcSpan { start: 1, end: 13 },
+        }
+    );
+}
+
+#[test]
+fn string_invalid_unicode_escape_sequence() {
+    assert_error!(
+        r#""\u{110000}""#,
+        ParseError {
+            error: ParseErrorType::LexError {
+                error: LexicalError {
+                    error: LexicalErrorType::InvalidUnicodeEscape(
+                        InvalidUnicodeEscapeError::InvalidCodepoint,
+                    ),
+                    location: SrcSpan { start: 1, end: 11 },
+                }
+            },
+            location: SrcSpan { start: 1, end: 11 },
         }
     );
 }
@@ -193,7 +319,7 @@ fn bit_array1() {
 fn bit_array2() {
     // patterns cannot be nested
     assert_error!(
-        "case <<>> { <<<<1>>:bit_string>> -> 1 }",
+        "case <<>> { <<<<1>>:bits>> -> 1 }",
         ParseError {
             error: ParseErrorType::NestedBitArrayPattern,
             location: SrcSpan { start: 14, end: 19 }
@@ -506,54 +632,76 @@ pub fn main() -> Nil {
 }
 
 #[test]
-fn deprecated_option_bit_string_const() {
-    assert_warning!(r#"pub const x = <<<<>>:bit_string>>"#);
-}
-
-#[test]
-fn deprecated_option_bit_string_expression() {
-    assert_warning!(
-        r#"pub fn main(x) {
-  <<x:bit_string>>
-}"#
+fn attributes_with_no_definition() {
+    assert_module_error!(
+        r#"
+@deprecated("1")
+@target(erlang)
+"#
     );
 }
 
 #[test]
-fn deprecated_option_bit_string_pattern() {
-    assert_warning!(
-        r#"pub fn main(x) {
-  let assert <<y:bit_string>> = x
-  y
-}"#
+fn external_attribute_with_non_fn_definition() {
+    assert_module_error!(
+        r#"
+@external(erlang, "module", "fun")
+pub type Fun
+"#
     );
 }
 
 #[test]
-fn deprecated_option_binary_const() {
-    assert_warning!(r#"pub const x = <<<<>>:binary>>"#);
-}
-
-#[test]
-fn deprecated_option_binary_expression() {
-    assert_warning!(
-        r#"pub fn main(x) {
-  <<x:binary>>
-}"#
-    );
-}
-
-#[test]
-fn deprecated_option_binary_pattern() {
-    assert_warning!(
-        r#"pub fn main(x) {
-  let assert <<y:binary>> = x
-  y
-}"#
+fn attributes_with_improper_definition() {
+    assert_module_error!(
+        r#"
+@deprecated("1")
+@external(erlang, "module", "fun")
+"#
     );
 }
 
 #[test]
 fn import_type() {
     assert_parse_module!(r#"import wibble.{type Wobble, Wobble, type Wabble}"#);
+}
+
+#[test]
+fn reserved_auto() {
+    assert_warning!(r#"const auto = 1"#);
+}
+
+#[test]
+fn reserved_delegate() {
+    assert_warning!(r#"const delegate = 1"#);
+}
+
+#[test]
+fn reserved_derive() {
+    assert_warning!(r#"const derive = 1"#);
+}
+
+#[test]
+fn reserved_else() {
+    assert_warning!(r#"const else = 1"#);
+}
+
+#[test]
+fn reserved_implement() {
+    assert_warning!(r#"const implement = 1"#);
+}
+
+#[test]
+fn reserved_macro() {
+    assert_warning!(r#"const macro = 1"#);
+}
+
+#[test]
+fn reserved_test() {
+    assert_warning!(r#"const test = 1"#);
+}
+
+#[test]
+fn reserved_echo() {
+    assert_warning!(r#"const echo = 1"#);
 }

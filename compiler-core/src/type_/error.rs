@@ -1,5 +1,6 @@
 use crate::{
     ast::{BinOp, SrcSpan, TodoKind},
+    build::Target,
     type_::Type,
 };
 
@@ -14,6 +15,12 @@ use pretty_assertions::assert_eq;
 use super::FieldAccessUsage;
 
 #[derive(Debug, Eq, PartialEq, Clone)]
+pub struct UnknownType {
+    pub location: SrcSpan,
+    pub name: EcoString,
+}
+
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub enum Error {
     SrcImportingTest {
         location: SrcSpan,
@@ -25,6 +32,7 @@ pub enum Error {
         error: crate::bit_array::ErrorType,
         location: SrcSpan,
     },
+
     UnknownLabels {
         unknown: Vec<(EcoString, SrcSpan)>,
         valid: Vec<EcoString>,
@@ -40,7 +48,7 @@ pub enum Error {
     UnknownType {
         location: SrcSpan,
         name: EcoString,
-        types: Vec<EcoString>,
+        hint: UnknownTypeHint,
     },
 
     UnknownModule {
@@ -274,6 +282,14 @@ pub enum Error {
         location: SrcSpan,
     },
 
+    // A function/constant that is used doesn't have an implementation for the
+    // current compilation target.
+    UnsupportedTarget {
+        location: SrcSpan,
+        target: Target,
+        kind: EcoString,
+    },
+
     // A function's JavaScript implementation has been given but it does not
     // have a valid module name.
     InvalidExternalJavascriptModule {
@@ -400,13 +416,18 @@ pub enum Warning {
         layer: Layer,
     },
 
-    DeprecatedBitString {
+    InexhaustiveCaseExpression {
         location: SrcSpan,
+        missing: Vec<EcoString>,
     },
 
-    DeprecatedTypeImport {
+    InexhaustiveLetAssignment {
         location: SrcSpan,
-        name: EcoString,
+        missing: Vec<EcoString>,
+    },
+
+    UnreachableCaseClause {
+        location: SrcSpan,
     },
 }
 
@@ -499,11 +520,17 @@ pub fn convert_get_value_constructor_error(
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum UnknownTypeHint {
+    AlternativeTypes(Vec<EcoString>),
+    ValueInScopeWithSameName,
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum UnknownTypeConstructorError {
     Type {
         name: EcoString,
-        type_constructors: Vec<EcoString>,
+        hint: UnknownTypeHint,
     },
 
     Module {
@@ -523,13 +550,10 @@ pub fn convert_get_type_constructor_error(
     location: &SrcSpan,
 ) -> Error {
     match e {
-        UnknownTypeConstructorError::Type {
-            name,
-            type_constructors,
-        } => Error::UnknownType {
+        UnknownTypeConstructorError::Type { name, hint } => Error::UnknownType {
             location: *location,
             name,
-            types: type_constructors,
+            hint,
         },
 
         UnknownTypeConstructorError::Module {

@@ -25,7 +25,7 @@ static ENTRYPOINT_TEMPLATE: &str = include_str!("../templates/erlang-shipment-en
 /// - include
 /// - priv
 pub(crate) fn erlang_shipment() -> Result<()> {
-    let paths = crate::project_paths_at_current_directory();
+    let paths = crate::find_project_paths()?;
     let target = Target::Erlang;
     let mode = Mode::Prod;
     let build = paths.build_directory_for_target(mode, target);
@@ -34,8 +34,8 @@ pub(crate) fn erlang_shipment() -> Result<()> {
     crate::fs::mkdir(&out)?;
 
     // Reset the directories to ensure we have a clean slate and no old code
-    crate::fs::delete_dir(&build)?;
-    crate::fs::delete_dir(&out)?;
+    crate::fs::delete_directory(&build)?;
+    crate::fs::delete_directory(&out)?;
 
     // Build project in production mode
     let built = crate::build::main(
@@ -99,7 +99,7 @@ the {file} script.
 }
 
 pub fn hex_tarball() -> Result<()> {
-    let paths = crate::project_paths_at_current_directory();
+    let paths = crate::find_project_paths()?;
     let config = crate::config::root_config()?;
     let data: Vec<u8> = crate::publish::build_hex_tarball(&paths, &config)?;
 
