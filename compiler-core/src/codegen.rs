@@ -10,9 +10,11 @@ use crate::{
 use ecow::EcoString;
 use im::HashMap;
 use itertools::Itertools;
-use std::{fmt::Debug, sync::Arc, borrow::Borrow, ops::Add};
+use wast::{token::{NameAnnotation, Span, Id, Index}, core::{Func, FuncKind, Local, ValType, Expression, Instruction, InlineExport, TypeUse, FunctionType}};
+use std::{fmt::Debug, sync::Arc, borrow::Borrow, ops::Add, mem, fs::File, io::Write};
 
 use camino::Utf8Path;
+use crate::analyse::TargetSupport;
 
 
 // #[derive(Debug)]
@@ -37,7 +39,7 @@ fn wasm_definition(statement: crate::ast::TypedDefinition) -> String {
 
     // let def: TypedDefinition = statement.definition;
     match statement {
-        crate::ast::Definition::Function(crate::ast::Function { location, end_position, name, arguments, body, public, deprecation, return_annotation, return_type, documentation, external_erlang, external_javascript }) => {
+        crate::ast::Definition::Function(crate::ast::Function { location, end_position, name, arguments, body, public, deprecation, return_annotation, return_type, documentation, external_erlang, external_javascript, supported_targets }) => {
                 let mut params = String::new();
                 // dbg!(&arguments);
                 // let len = arguments.len();
@@ -197,35 +199,7 @@ fn wasm_definition(statement: crate::ast::TypedDefinition) -> String {
 #[test]
 fn wasm_1st() {
     // cargo test --package gleam-core --lib -- codegen::wasm_1st --exact --nocapture
-    let parsed = crate::parse::parse_module(
-        "pub fn add(x: Int, y: Int) -> Int {
-            x + y
-          }",
-    )
-    .expect("syntax error");
-    let module = parsed.module;
-    // println!("{module:?}");
-    let ids = crate::uid::UniqueIdGenerator::new();
-    let small = ecow::EcoString::from("Welcome");
-    let mut hs = im::hashmap::HashMap::new();
-    let hs2: std::collections::HashMap<EcoString, EcoString> = std::collections::HashMap::new();
-    let we = TypeWarningEmitter::new(
-        camino::Utf8PathBuf::new(),
-        "".into(),
-        WarningEmitter::new(
-            Arc::new(crate::warning::VectorWarningEmitterIO::default()),
-        ),
-    );
-
-
-    let _ = hs.insert(
-        crate::type_::PRELUDE_MODULE_NAME.into(),
-        crate::type_::build_prelude(&ids),
-    );
-
-    let module = crate::analyse::infer_module(crate::build::Target::JavaScript,&ids,
-    module,
-    crate::build::Origin::Src,&small,&hs,&we,&hs2).expect("type error?");
+    let module = trying_to_make_module();
 
 
     // running 1 test
@@ -270,6 +244,223 @@ for def in defs {
 
 }
     
+}
+
+fn trying_to_make_module() -> crate::ast::Module<crate::type_::ModuleInterface, crate::ast::Definition<Arc<crate::type_::Type>, crate::ast::TypedExpr, EcoString, EcoString>> {
+    let parsed = crate::parse::parse_module(
+        "pub fn add(x: Int, y: Int) -> Int {
+            x + y
+          }",
+    )
+    .expect("syntax error");
+    let module = parsed.module;
+    // println!("{module:?}");
+    let ids = crate::uid::UniqueIdGenerator::new();
+    let small = ecow::EcoString::from("Welcome");
+    let mut hs = im::hashmap::HashMap::new();
+    let hs2: std::collections::HashMap<EcoString, EcoString> = std::collections::HashMap::new();
+    let we = TypeWarningEmitter::new(
+        camino::Utf8PathBuf::new(),
+        "".into(),
+        WarningEmitter::new(
+            Arc::new(crate::warning::VectorWarningEmitterIO::default()),
+        ),
+    );
+
+
+    let _ = hs.insert(
+        crate::type_::PRELUDE_MODULE_NAME.into(),
+        crate::type_::build_prelude(&ids),
+    );
+
+    let module = crate::analyse::infer_module(crate::build::Target::JavaScript,&ids,
+    module,
+    crate::build::Origin::Src,&small,&hs,&we,&hs2,TargetSupport::NotEnforced).expect("type error?");
+    module
+}
+
+#[test]
+fn wasm_2n() {
+    use wast::core::{Module, ModuleKind,ModuleField}; 
+
+    let gleam_module = trying_to_make_module();
+    let mut module_fields = Vec::new();
+
+    for exp in gleam_module.definitions {
+        match exp{
+            crate::ast::Definition::Function(f) => {
+
+                // let mut locals = [Local{ id: todo!(), name: todo!(), ty: todo!() };f.arguments.len()];
+                // let mut arguments = Vec::new();
+                let mut params: Box<[Local<'_>]> = Box::new([]);
+                let mut arguments = Vec::from(mem::take(&mut params));
+                for param in f.arguments.into_iter() {
+                    let ty =  match param.type_.as_ref() {
+                        crate::type_::Type::Named { public, module, name, args } => match name.as_str() {
+                            "Int" => ValType::I64, //TODO take from symbol table? So we get custom types too?
+                            _ => todo!()
+                        },
+                        crate::type_::Type::Fn { args, retrn } => todo!(),
+                        crate::type_::Type::Var { type_ } => todo!(),
+                        crate::type_::Type::Tuple { elems } => todo!(),
+                    };
+                    // let name = param.get_variable_name().map_or(None, |a| {
+                    //     let x = a.to_owned();
+                    //     Some(NameAnnotation{ name: &a})});
+                    // let mut name = None;
+
+                    // if param.get_variable_name().is_some() {
+                    //     let x = param.get_variable_name().unwrap().to_owned();
+                    //     // let anno: NameAnnotation<'a> = NameAnnotation {name: &'staticx};
+                    //     let bugger: &'static str =  &x;
+                    //     let anno = NameAnnotation {name: *bugger};
+                    //     name = Some(anno);
+                    // }
+
+                    arguments.push(Local {
+                        id: None,
+                        name: None, //Bah I want the name but the lifetime... maybe we put the lifetime so we can own here and this func has the lifetime of the whole thind, whatever for now none
+                        ty,
+                    });
+                };
+
+                // let mut instructions = [Expression;f.body.len()];
+                // let mut instructions = Vec::new();
+                // let mut params = [];
+                // let mut arguments = Vec::from(mem::take(&mut params));
+                let mut instrs: Box<[Instruction<'_>]> = Box::new([]);
+                let mut instructions = Vec::from(mem::take(&mut instrs));
+                for g_e in f.body.into_iter() {
+                    match g_e {
+                        crate::ast::Statement::Expression(inner_e) => {
+                            match inner_e {
+                                // Today early afternoon 14/1 left-off here!
+                                crate::ast::TypedExpr::Int { location, typ, value } => todo!(),
+                                crate::ast::TypedExpr::Float { location, typ, value } => todo!(),
+                                crate::ast::TypedExpr::String { location, typ, value } => todo!(),
+                                crate::ast::TypedExpr::Block { location, statements } => todo!(),
+                                crate::ast::TypedExpr::Pipeline { location, assignments, finally } => todo!(),
+                                crate::ast::TypedExpr::Var { location, constructor, name } => todo!(),
+                                crate::ast::TypedExpr::Fn { location, typ, is_capture, args, body, return_annotation } => todo!(),
+                                crate::ast::TypedExpr::List { location, typ, elements, tail } => todo!(),
+                                crate::ast::TypedExpr::Call { location, typ, fun, args } => todo!(),
+                                crate::ast::TypedExpr::BinOp { location, typ, name, left, right } => {
+                                    match name {
+                                        BinOp::And => todo!(),
+                                        BinOp::Or => todo!(),
+                                        BinOp::Eq => todo!(),
+                                        BinOp::NotEq => todo!(),
+                                        BinOp::LtInt => todo!(),
+                                        BinOp::LtEqInt => todo!(),
+                                        BinOp::LtFloat => todo!(),
+                                        BinOp::LtEqFloat => todo!(),
+                                        BinOp::GtEqInt => todo!(),
+                                        BinOp::GtInt => todo!(),
+                                        BinOp::GtEqFloat => todo!(),
+                                        BinOp::GtFloat => todo!(),
+                                        BinOp::AddInt => instructions.push(Instruction::I64Add),
+                                        BinOp::AddFloat => todo!(),
+                                        BinOp::SubInt => todo!(),
+                                        BinOp::SubFloat => todo!(),
+                                        BinOp::MultInt => todo!(),
+                                        BinOp::MultFloat => todo!(),
+                                        BinOp::DivInt => todo!(),
+                                        BinOp::DivFloat => todo!(),
+                                        BinOp::RemainderInt => todo!(),
+                                        BinOp::Concatenate => todo!(),
+                                    };
+
+                                    instructions.push(Instruction::LocalGet(Index::Num(0, Span::from_offset(0)))); //TODO id is better but... ya know put it in a symbol table
+                                    instructions.push(Instruction::LocalGet(Index::Num(1, Span::from_offset(0))));
+                                    // match left {
+                                    //  //TODO!
+                                    // },
+                                }
+                                crate::ast::TypedExpr::Case { location, typ, subjects, clauses } => todo!(),
+                                crate::ast::TypedExpr::RecordAccess { location, typ, label, index, record } => todo!(),
+                                crate::ast::TypedExpr::ModuleSelect { location, typ, label, module_name, module_alias, constructor } => todo!(),
+                                crate::ast::TypedExpr::Tuple { location, typ, elems } => todo!(),
+                                crate::ast::TypedExpr::TupleIndex { location, typ, index, tuple } => todo!(),
+                                crate::ast::TypedExpr::Todo { location, message, type_ } => todo!(),
+                                crate::ast::TypedExpr::Panic { location, message, type_ } => todo!(),
+                                crate::ast::TypedExpr::BitArray { location, typ, segments } => todo!(),
+                                crate::ast::TypedExpr::RecordUpdate { location, typ, spread, args } => todo!(),
+                                crate::ast::TypedExpr::NegateBool { location, value } => todo!(),
+                                crate::ast::TypedExpr::NegateInt { location, value } => todo!(),
+                            }
+                        },
+                        crate::ast::Statement::Assignment(_) => todo!(),
+                        crate::ast::Statement::Use(_) => todo!(),
+                    };
+                }
+
+                let offset = f.location.start as usize;
+                let span = Span::from_offset(offset);
+
+
+                let results_type = match f.return_type.as_ref() {
+                    crate::type_::Type::Named { public, module, name, args } => match name.as_str() {
+                        "Int" => ValType::I64, //TODO take from symbol table? So we get custom types too?
+                        _ => todo!()
+                    },
+                    crate::type_::Type::Fn { args, retrn } => todo!(),
+                    crate::type_::Type::Var { type_ } => todo!(),
+                    crate::type_::Type::Tuple { elems } => todo!(),
+                };
+                let mut huh: Box<[(Option<Id<'_>>, Option<NameAnnotation<'_>>, ValType<'_>)]> = Box::new([]);
+                let mut args_procced = Vec::from(mem::take(&mut huh));;
+                // let mut params = [];
+                // let mut arguments = Vec::from(mem::take(&mut params));
+                for arg in &arguments {
+                    args_procced.push((arg.id, arg.name, arg.ty))
+                }
+
+                let ty = TypeUse {
+                    index: None,
+                    inline: Some(FunctionType {
+                        params: args_procced.into(),
+                        results: Box::new([results_type]),
+                    }),
+                };
+
+                // dbg!(instructions.len());
+
+                let mut wf = Func {
+                    span,
+                    id: None,
+                    name: Some(NameAnnotation{name: "dangitawrongliteral"}), //f.name Bah I want the name but the lifetime... maybe we put the lifetime so we can own here and this func has the lifetime of the whole thind, whatever for now none
+                    exports: InlineExport::default(),
+                    kind: FuncKind::Inline{ 
+                        locals: Box::new([]), //TODO 
+                        expression: Expression { instrs:instructions.into() } },
+                    ty,
+                };
+
+                module_fields.push(ModuleField::Func(wf))
+            },
+            crate::ast::Definition::TypeAlias(_) => todo!(),
+            crate::ast::Definition::CustomType(_) => todo!(),
+            crate::ast::Definition::Import(_) => todo!(),
+            crate::ast::Definition::ModuleConstant(_) => todo!(),
+        }
+    }
+
+    let m_name = gleam_module.name;
+    let offset = 0;
+    let mut wasm_module = Module {
+        span: Span::from_offset(offset),
+        id: None,
+        name: Some(NameAnnotation{name: &m_name}), //TODO use a parser? But find out which they use
+        kind: ModuleKind::Text(module_fields),
+    };
+
+    //TODO hmm, looks like a module has field or blobs, inside the module kind
+    // dbg!(wasm_module.encode().unwrap());
+    // assert!(false)
+    let mut file = File::create("letstry.wasm").unwrap();
+    file.write_all(&wasm_module.encode().unwrap());
+    // Totally the wrong instructions!
+
 }
 
 /// A code generator that creates a .erl Erlang module and record header files

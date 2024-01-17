@@ -83,6 +83,9 @@ camino = { version = "1.1.6", features = ["serde1"] }
 pathdiff = { version = "0.2.1", features = ["camino"] }
 # Memory arena using ids rather than references
 id-arena = "2.1"
+# Wasm AST
+#wasmparser = "0.118.1"
+wast = "69.0.1"
 
 [build-dependencies]
 # Data (de)serialisation
