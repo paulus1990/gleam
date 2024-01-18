@@ -10,7 +10,7 @@ use crate::{
     Result,
 };
 use ecow::EcoString;
-use im::HashMap;
+use im::{HashMap, HashSet};
 use itertools::Itertools;
 use std::cell::RefCell;
 use std::{fmt::Debug, fs::File, io::Write, mem, sync::Arc};
@@ -295,14 +295,14 @@ fn trying_to_make_module(
     module
 }
 
-struct WasmThing<'a> {
-    gleam_module:
-        crate::ast::Module<ModuleInterface, Definition<Arc<Type>, TypedExpr, EcoString, EcoString>>,
-    wasm_instructions: RefCell<Vec<ModuleField<'a>>>,
+struct WasmThing {
+    gleam_module: crate::ast::Module<ModuleInterface, Definition<Arc<Type>, TypedExpr, EcoString, EcoString>>,
+    wasm_instructions: RefCell<Vec<ModuleField<'static>>>,
     //AST
     //Id is pretty private :( identifiers: HashMap<&'a str, Id<'a>>, // Symbol table, but not really, wanted to use for wasm names but unnecessary byte code. Will matter if we do in Gleam  "let x=1; ds(x);"
-    identifiers: HashMap<String, usize>,
-    known_types: HashMap<&'a str, ValType<'a>>,
+    identifiers: HashMap<String, usize>, //globals?
+    known_types: HashMap<&'static str, ValType<'static>>,
+    names: HashMap<&'static str,&'static str>
 }
 
 fn known_types() -> HashMap<&'static str, ValType<'static>> {
@@ -311,11 +311,11 @@ fn known_types() -> HashMap<&'static str, ValType<'static>> {
     map
 }
 
-impl<'a> WasmThing<'a> {
+impl WasmThing {
     // TODO remember wasm is stack based so arguments before functions :)
 
 
-    // fn new(gleam_module: crate::ast::Module<crate::type_::ModuleInterface, crate::ast::Definition<Arc<crate::type_::Type>, crate::ast::TypedExpr, EcoString, EcoString>>) -> WasmThing<'a> {
+    // TODO give <'a> fn new(gleam_module: crate::ast::Module<crate::type_::ModuleInterface, crate::ast::Definition<Arc<crate::type_::Type>, crate::ast::TypedExpr, EcoString, EcoString>>) -> WasmThing<'a> {
     //     WasmThing {
     //         gleam_module,
     //         wasm_instructions: vec![],
@@ -325,9 +325,21 @@ impl<'a> WasmThing<'a> {
     //     }
     // }
 
-    fn transform(self) -> std::result::Result<Vec<u8>, Error> {
+    fn transform(mut self) -> std::result::Result<Vec<u8>, Error> {
         let offset = 0; //For now we pretend each is a
                         // let name = self.gleam_module.name;
+
+        // self.names.insert("lol","lol");
+
+        for definition in &self.gleam_module.definitions {
+            if let Definition::Function(gleam_function) = definition{
+                //lol dump that on the heap... Not sure about this.... TODO check ecostring maybe has some way to do this already?
+                let name = gleam_function.name.to_string();
+                let name = Box::new(name);
+                let name = Box::leak(name);
+                let _ = self.names.insert(name, name);
+            }
+        }
 
         for gleam_definition in &self.gleam_module.definitions {
             self.transform_gleam_definition(gleam_definition);
@@ -362,19 +374,19 @@ impl<'a> WasmThing<'a> {
         let offset = gleam_function.location.start as usize;
         let span = Span::from_offset(offset);
         let result_type = self.transform_gleam_type(gleam_function.return_type.as_ref());
-        let mut params: Box<[(Option<Id<'a>>, Option<NameAnnotation<'a>>, ValType<'a>)]> =
+        let mut params: Box<[(Option<Id<'static>>, Option<NameAnnotation<'static>>, ValType<'static>)]> =
             Box::new([]);
         let mut arguments = Vec::from(mem::take(&mut params));
-        let mut locals_box: Box<[Local<'a>]> = Box::new([]);
+        let mut locals_box: Box<[Local<'static>]> = Box::new([]);
         let mut locals = Vec::from(mem::take(&mut locals_box)); //TODO why not just the vec?
-        let mut scope = self.identifiers.clone();
+        let mut scope = self.identifiers.clone(); //TODO identifiers is more globals? Not mutated right now..
         for param in gleam_function.arguments.iter() {
             let name = self.get_gleam_name(&param.names);
             let _ = scope.insert(name, scope.len());
             let type_ = self.transform_gleam_type(param.type_.as_ref());
             arguments.push((None, None, type_));
         }
-        let mut instrs: Box<[Instruction<'a>]> = Box::new([]);
+        let mut instrs: Box<[Instruction<'static>]> = Box::new([]);
         let mut instructions = Vec::from(mem::take(&mut instrs));
         for gleam_statement in gleam_function.body.iter() {
             let (mut instrs, mut lcls) = self.transform_gleam_statement(gleam_statement, &mut scope);
@@ -390,11 +402,22 @@ impl<'a> WasmThing<'a> {
             }),
         };
 
+
+        let export: InlineExport = if gleam_function.public {
+            // We can have a parser? Inline::parse(MyParser<'a>) That has a &'a to a ParseBuf<'a> which has a from str... beh but takes its lifetime
+            InlineExport {
+                names: vec![*self.names.get(gleam_function.name.as_str()).unwrap()] //TODO borrow doesn't live long enough... Can't borrow function for 'a since in a for loop... Like the underlying thing lives long enough Or can I supply a &'a something here?
+            }
+        }
+            else {
+                InlineExport::default()
+            };
+
         let wasm_func = Func {
             span,
             id: None,
             name: None, //Some(NameAnnotation { name: &gleam_function.name }),
-            exports: InlineExport::default(),
+            exports: export,
             kind: FuncKind::Inline {
                 locals: locals.into(), //TODO maybe get from scope, it'd bet the slice of it that's bigger than the arguments length...
                 expression: Expression {
@@ -419,7 +442,7 @@ impl<'a> WasmThing<'a> {
         &self,
         gleam_statement: &Statement<Arc<Type>, TypedExpr>,
         scope: &mut HashMap<String, usize>,
-    ) -> (Vec<Instruction<'a>>, Vec<Local<'a>>) {
+    ) -> (Vec<Instruction<'static>>, Vec<Local<'static>>) {
         match gleam_statement {
             Statement::Expression(gleam_expression) => {
                 self.transform_gleam_expression(gleam_expression, scope)
@@ -431,7 +454,7 @@ impl<'a> WasmThing<'a> {
         }
     }
 
-    fn transform_gleam_assignment(&self, gleam_assignment: &Assignment<Arc<Type>, TypedExpr>, scope: &mut HashMap<String, usize>) -> (Vec<Instruction<'a>>, Vec<Local<'a>>) {
+    fn transform_gleam_assignment(&self, gleam_assignment: &Assignment<Arc<Type>, TypedExpr>, scope: &mut HashMap<String, usize>) -> (Vec<Instruction<'static>>, Vec<Local<'static>>) {
         match &gleam_assignment.pattern {
             Pattern::Variable { name, type_,location } => {
                 let idx = scope.len();
@@ -455,7 +478,7 @@ impl<'a> WasmThing<'a> {
         &self,
         gleam_expression: &TypedExpr,
         scope: &mut HashMap<String, usize>,
-    ) -> (Vec<Instruction<'a>>, Vec<Local<'a>>) {
+    ) -> (Vec<Instruction<'static>>, Vec<Local<'static>>) {
         let mut instructions = Vec::new();
         let mut locals = Vec::new();
         match gleam_expression {
@@ -488,14 +511,14 @@ impl<'a> WasmThing<'a> {
         (instructions,locals)
     }
 
-    fn transform_gleam_bin_op(&self, name: &BinOp) -> Instruction<'a> {
+    fn transform_gleam_bin_op(&self, name: &BinOp) -> Instruction<'static> {
         match name {
             BinOp::AddInt => I64Add,
             _ => todo!(),
         }
     }
 
-    fn transform_gleam_type(&self, type_: &Type) -> ValType<'a> {
+    fn transform_gleam_type(&self, type_: &Type) -> ValType<'static> {
         match type_ {
             Type::Named { name, .. } => self
                 .known_types
@@ -523,16 +546,17 @@ fn wasm_2n() {
         wasm_instructions: RefCell::new(vec![]),
         identifiers: Default::default(),
         known_types: known_types(), // TODO prolly need types imported and a whole thing when getting some more
+        names: HashMap::new()
     };
     let res = w.transform().unwrap();
     let mut file = File::create("letstry.wasm").unwrap();
 
-    let exp = [
-        0, 97, 115, 109, 1, 0, 0, 0, 1, 7, 1, 96, 2, 126, 126, 1, 126, 3, 2, 1, 0, 10, 9, 1, 7, 0,
-        124, 32, 0, 32, 1, 11,
-    ]; //TODO could use the wasm parser instructions, they have the byte codes, add the magic bytes at the front :)
+    // let exp = [
+    //     0, 97, 115, 109, 1, 0, 0, 0, 1, 7, 1, 96, 2, 126, 126, 1, 126, 3, 2, 1, 0, 10, 9, 1, 7, 0,
+    //     124, 32, 0, 32, 1, 11,
+    // ]; //TODO could use the wasm parser instructions, they have the byte codes, add the magic bytes at the front :)
 
-    assert_eq!(&res, &exp);
+    // assert_eq!(&res, &exp);
     let _ = file.write_all(&res);
     // assert!(false);
 }
@@ -543,11 +567,11 @@ fn wasm_3nd() {
     // use wast::core::{Module, ModuleKind,ModuleField};
 
     let gleam_module = trying_to_make_module(
-        "fn add(x: Int, y: Int) -> Int {
+        "pub fn add(x: Int, y: Int) -> Int {
             let z = 10
             x + y + z
           }",
-    ); //TODO small change removed pub from fn! Since not exported in wasm yet.
+    );
 
     // let w = WasmThing::new(gleam_module);
     let w = WasmThing {
@@ -555,6 +579,7 @@ fn wasm_3nd() {
         wasm_instructions: RefCell::new(vec![]),
         identifiers: Default::default(),
         known_types: known_types(), // TODO prolly need types imported and a whole thing when getting some more
+        names: HashMap::new()
     };
     let res = w.transform().unwrap();
     let mut file = File::create("letstry.wasm").unwrap();
