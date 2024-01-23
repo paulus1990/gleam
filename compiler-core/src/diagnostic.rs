@@ -3,6 +3,7 @@ use camino::Utf8PathBuf;
 pub use codespan_reporting::diagnostic::{LabelStyle, Severity};
 use codespan_reporting::{diagnostic::Label as CodespanLabel, files::SimpleFile};
 use ecow::EcoString;
+use lsp_types::NumberOrString;
 use termcolor::Buffer;
 
 use crate::ast::SrcSpan;
@@ -41,6 +42,7 @@ pub struct Diagnostic {
     pub level: Level,
     pub location: Option<Location>,
     pub hint: Option<String>,
+    pub code: Option<NumberOrString>
 }
 
 impl Diagnostic {
