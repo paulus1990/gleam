@@ -42,7 +42,7 @@ pub struct Diagnostic {
     pub level: Level,
     pub location: Option<Location>,
     pub hint: Option<String>,
-    pub code: Option<NumberOrString>
+    pub code: Option<NumberOrString>,
 }
 
 impl Diagnostic {

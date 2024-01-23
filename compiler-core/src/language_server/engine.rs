@@ -228,7 +228,10 @@ where
                 return Ok(None);
             };
 
-            code_action_unused_imports(module, &params, &mut actions);
+            dbg!(&params.context);
+            params.context.diagnostics.iter().for_each(|diag| {
+                provide_codeaction_for_diagnostic(diag, module, &params, &mut actions)
+            });
 
             Ok(if actions.is_empty() {
                 None
@@ -416,6 +419,17 @@ where
         }
 
         completions
+    }
+}
+
+fn provide_codeaction_for_diagnostic(
+    diag: &lsp::Diagnostic,
+    module: &Module,
+    params: &lsp::CodeActionParams,
+    actions: &mut Vec<CodeAction>,
+) {
+    if diag.code == Some(lsp::NumberOrString::String("UNUSED_IMPORT".into())) {
+        code_action_unused_imports(module, &params, actions);
     }
 }
 

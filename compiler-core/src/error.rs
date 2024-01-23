@@ -435,6 +435,7 @@ of the Gleam dependency modules."
                     level: Level::Error,
                     location: None,
                     hint: None,
+                    code: None,
                 }
             }
 
@@ -467,6 +468,7 @@ This prefix is intended for official Gleam packages only.",
                     title: "Invalid project name".into(),
                     text,
                     hint: None,
+                    code: None,
                     level: Level::Error,
                     location: None,
                 }
@@ -482,6 +484,7 @@ forward slash and must not end with a slash."
                 level: Level::Error,
                 location: None,
                 hint: None,
+                code: None,
             },
 
             Error::ModuleDoesNotExist { module, suggestion } => {
@@ -495,6 +498,7 @@ forward slash and must not end with a slash."
                     level: Level::Error,
                     location: None,
                     hint: Some(hint),
+                    code: None,
                 }
             }
 
@@ -509,6 +513,7 @@ forward slash and must not end with a slash."
                     "Add a function with the singature `pub fn main() {{}}` \
 to `src/{module}.gleam`"
                 )),
+                code: None,
             },
 
             Error::MainFunctionHasWrongArity { module, arity } => Diagnostic {
@@ -519,6 +524,7 @@ to `src/{module}.gleam`"
                 level: Level::Error,
                 location: None,
                 hint: Some("Change the function signature of main to `pub fn main() {}`".into()),
+                code: None,
             },
 
             Error::ProjectRootAlreadyExist { path } => Diagnostic {
@@ -526,6 +532,7 @@ to `src/{module}.gleam`"
                 text: format!("Project folder root:\n\n  {path}"),
                 level: Level::Error,
                 hint: None,
+                code: None,
                 location: None,
             },
 
@@ -533,6 +540,7 @@ to `src/{module}.gleam`"
                 title: "Invalid project root".into(),
                 text: format!("We were unable to find the project root:\n\n  {path}"),
                 hint: None,
+                code: None,
                 level: Level::Error,
                 location: None,
             },
@@ -545,6 +553,7 @@ your app.src file \"{app_ver}\""
                 Diagnostic {
                     title: "Version does not match".into(),
                     hint: None,
+                    code: None,
                     text,
                     level: Level::Error,
                     location: None,
@@ -584,6 +593,7 @@ You can also install rebar3 via homebrew using \"brew install rebar3\"",
                     title: "Program not found".into(),
                     text,
                     hint: None,
+                    code: None,
                     level: Level::Error,
                     location: None,
                 }
@@ -599,6 +609,7 @@ You can also install rebar3 via homebrew using \"brew install rebar3\"",
                     title: "Shell command failure".into(),
                     text,
                     hint: None,
+                    code: None,
                     level: Level::Error,
                     location: None,
                 }
@@ -621,6 +632,7 @@ The error from the shell command library was:
                     title: "Shell command failure".into(),
                     text,
                     hint: None,
+                    code: None,
                     level: Level::Error,
                     location: None,
                 }
@@ -638,6 +650,7 @@ This was error from the gzip library:
                     title: "Gzip compression failure".into(),
                     text,
                     hint: None,
+                    code: None,
                     level: Level::Error,
                     location: None,
                 }
@@ -657,6 +670,7 @@ This was error from the tar library:
                     title: "Failure creating tar archive".into(),
                     text,
                     hint: None,
+                    code: None,
                     level: Level::Error,
                     location: None,
                 }
@@ -674,6 +688,7 @@ This was error from the tar library:
                     title: "Failure opening tar archive".into(),
                     text,
                     hint: None,
+                    code: None,
                     level: Level::Error,
                     location: None,
                 }
@@ -691,6 +706,7 @@ This was error from the tar library:
                     title: "Failure creating tar archive".into(),
                     text,
                     hint: None,
+                    code: None,
                     level: Level::Error,
                     location: None,
                 }
@@ -708,6 +724,7 @@ This was error from the Hex client library:
                     title: "Hex API failure".into(),
                     text,
                     hint: None,
+                    code: None,
                     level: Level::Error,
                     location: None,
                 }
@@ -730,6 +747,7 @@ Second: {}",
                     title: "Duplicate module".into(),
                     text,
                     hint: None,
+                    code: None,
                     level: Level::Error,
                     location: None,
                 }
@@ -739,6 +757,7 @@ Second: {}",
                 title: "Duplicate Source file".into(),
                 text: format!("The file `{file}` is defined multiple times."),
                 hint: None,
+                code: None,
                 level: Level::Error,
                 location: None,
             },
@@ -769,6 +788,7 @@ Second: {}",
                     title: "File IO failure".into(),
                     text,
                     hint: None,
+                    code: None,
                     level: Level::Error,
                     location: None,
                 }
@@ -783,6 +803,7 @@ Second: {}",
                     level: Level::Error,
                     location: None,
                     hint: None,
+                    code: None,
                 }
             }
 
@@ -796,6 +817,7 @@ Second: {}",
                     title: "Failed to initialize git repository".into(),
                     text,
                     hint: None,
+                    code: None,
                     level: Level::Error,
                     location: None,
                 }
@@ -821,6 +843,7 @@ modules cannot import them. Perhaps move the `{}` module to the src directory.",
                         title: "App importing test module".into(),
                         text,
                         hint: None,
+                        code: None,
                         level: Level::Error,
                         location: Some(Location {
                             label: Label {
@@ -880,6 +903,7 @@ constructor accepts."
                         title,
                         text,
                         hint: None,
+                        code: None,
                         level: Level::Error,
                         location: Some(Location {
                             label,
@@ -899,6 +923,7 @@ not expect any. Please remove the label `{label}`."
                         title: "Unexpected labelled argument".into(),
                         text,
                         hint: None,
+                        code: None,
                         level: Level::Error,
                         location: Some(Location {
                             label: Label {
@@ -922,6 +947,7 @@ also be labelled."
                         title: "Unexpected positional argument".into(),
                         text,
                         hint: None,
+                        code: None,
                         level: Level::Error,
                         location: Some(Location {
                             label: Label {
@@ -948,6 +974,7 @@ Names in a Gleam module must be unique so one will need to be renamed."
                         title: "Duplicate import".into(),
                         text,
                         hint: None,
+                        code: None,
                         level: Level::Error,
                         location: Some(Location {
                             label: Label {
@@ -983,6 +1010,7 @@ Names in a Gleam module must be unique so one will need to be renamed."
                         title: "Duplicate definition".into(),
                         text,
                         hint: None,
+                        code: None,
                         level: Level::Error,
                         location: Some(Location {
                             label: Label {
@@ -1013,6 +1041,7 @@ Names in a Gleam module must be unique so one will need to be renamed."
                         title: "Duplicate type definition".into(),
                         text,
                         hint: None,
+                        code: None,
                         level: Level::Error,
                         location: Some(Location {
                             label: Label {
@@ -1036,6 +1065,7 @@ Names in a Gleam module must be unique so one will need to be renamed."
                         title: "Duplicate field".into(),
                         text,
                         hint: None,
+                        code: None,
                         level: Level::Error,
                         location: Some(Location {
                             label: Label {
@@ -1056,6 +1086,7 @@ Names in a Gleam module must be unique so one will need to be renamed."
                         title: "Duplicate argument".into(),
                         text,
                         hint: None,
+                        code: None,
                         level: Level::Error,
                         location: Some(Location {
                             label: Label {
@@ -1079,6 +1110,7 @@ Hint: Add some type annotations and try again."
                         title: "Recursive type".into(),
                         text,
                         hint: None,
+                        code: None,
                         level: Level::Error,
                         location: Some(Location {
                             label: Label {
@@ -1102,6 +1134,7 @@ Hint: Add some type annotations and try again."
                         title: "Type mismatch".into(),
                         text,
                         hint: None,
+                        code: None,
                         level: Level::Error,
                         location: Some(Location {
                             label: Label {
@@ -1164,6 +1197,7 @@ to call a method on this value you may want to use the function syntax instead."
                         title: "Unknown record field".into(),
                         text,
                         hint: None,
+                        code: None,
                         level: Level::Error,
                         location: Some(Location {
                             label: Label {
@@ -1207,6 +1241,7 @@ But this argument has this type:
                         title: "Type mismatch".into(),
                         text,
                         hint: None,
+                        code: None,
                         level: Level::Error,
                         location: Some(Location {
                             label: Label {
@@ -1258,6 +1293,7 @@ But function expects:
                         title: "Type mismatch".into(),
                         text,
                         hint: None,
+                        code: None,
                         level: Level::Error,
                         location: Some(Location {
                             label: Label {
@@ -1297,6 +1333,7 @@ But function expects:
                         title: "Type mismatch".into(),
                         text,
                         hint: None,
+                        code: None,
                         level: Level::Error,
                         location: Some(Location {
                             label: Label {
@@ -1328,6 +1365,7 @@ number of arguments."
                         title: "Incorrect arity".into(),
                         text,
                         hint: None,
+                        code: None,
                         level: Level::Error,
                         location: Some(Location {
                             label: Label {
@@ -1369,6 +1407,7 @@ number of arguments."
                         title: "Incorrect arity".into(),
                         text,
                         hint: None,
+                        code: None,
                         level: Level::Error,
                         location: Some(Location {
                             label: Label {
@@ -1391,6 +1430,7 @@ assigned variables to all of them."
                         title: "Unnecessary spread operator".into(),
                         text,
                         hint: None,
+                        code: None,
                         level: Level::Error,
                         location: Some(Location {
                             label: Label {
@@ -1417,6 +1457,7 @@ constructing a new record with its values."
                         title: "Unsafe record update".into(),
                         text,
                         hint: None,
+                        code: None,
                         level: Level::Error,
                         location: Some(Location {
                             label: Label {
@@ -1444,6 +1485,7 @@ constructing a new record with its values."
                         title: "Unknown type".into(),
                         text,
                         hint: None,
+                        code: None,
                         level: Level::Error,
                         location: Some(Location {
                             label: Label {
@@ -1465,6 +1507,7 @@ constructing a new record with its values."
                     title: "Unknown variable".into(),
                     text: wrap_format!("The name `{name}` is not in scope here."),
                     hint: None,
+                    code: None,
                     level: Level::Error,
                     location: Some(Location {
                         label: Label {
@@ -1497,6 +1540,7 @@ Private types can only be used within the module that defines them.",
                         title: "Private type used in public interface".into(),
                         text,
                         hint: None,
+                        code: None,
                         level: Level::Error,
                         location: Some(Location {
                             label: Label {
@@ -1518,6 +1562,7 @@ Private types can only be used within the module that defines them.",
                     title: "Unknown module".into(),
                     text: format!("No module has been found with the name `{name}`."),
                     hint: None,
+                    code: None,
                     level: Level::Error,
                     location: Some(Location {
                         label: Label {
@@ -1542,6 +1587,7 @@ Private types can only be used within the module that defines them.",
                         title: "Unknown module type".into(),
                         text,
                         hint: None,
+                        code: None,
                         level: Level::Error,
                         location: Some(Location {
                             label: Label {
@@ -1567,6 +1613,7 @@ Private types can only be used within the module that defines them.",
                         title: "Unknown module field".into(),
                         text,
                         hint: None,
+                        code: None,
                         level: Level::Error,
                         location: Some(Location {
                             label: Label {
@@ -1598,6 +1645,7 @@ Private types can only be used within the module that defines them.",
                         title: "Unknown module field".into(),
                         text,
                         hint: None,
+                        code: None,
                         level: Level::Error,
                         location: Some(Location {
                             label: Label {
@@ -1626,6 +1674,7 @@ Each clause must have a pattern for every subject value.",
                         title: "Incorrect number of patterns".into(),
                         text,
                         hint: None,
+                        code: None,
                         level: Level::Error,
                         location: Some(Location {
                             label: Label {
@@ -1649,6 +1698,7 @@ function, or be an argument to the function. The variable `{}` is not defined lo
                         title: "Invalid guard variable".into(),
                         text,
                         hint: None,
+                        code: None,
                         level: Level::Error,
                         location: Some(Location {
                             label: Label {
@@ -1672,6 +1722,7 @@ This variable `{}` has not been previously defined.",
                         title: "Extra alternative pattern variable".into(),
                         text,
                         hint: None,
+                        code: None,
                         level: Level::Error,
                         location: Some(Location {
                             label: Label {
@@ -1695,6 +1746,7 @@ as the initial pattern, but the `{}` variable is missing.",
                         title: "Missing alternative pattern variable".into(),
                         text,
                         hint: None,
+                        code: None,
                         level: Level::Error,
                         location: Some(Location {
                             label: Label {
@@ -1721,6 +1773,7 @@ e.g. (x, y) if x == y -> ...",
                         title: "Duplicate variable in pattern".into(),
                         text,
                         hint: None,
+                        code: None,
                         level: Level::Error,
                         location: Some(Location {
                             label: Label {
@@ -1740,6 +1793,7 @@ e.g. (x, y) if x == y -> ...",
                     title: "Out of bounds tuple index".into(),
                     text: "This tuple has no elements so it cannot be indexed at all.".into(),
                     hint: None,
+                    code: None,
                     level: Level::Error,
                     location: Some(Location {
                         label: Label {
@@ -1768,6 +1822,7 @@ tuple has {} elements so the highest valid index is {}.",
                         title: "Out of bounds tuple index".into(),
                         text,
                         hint: None,
+                        code: None,
                         level: Level::Error,
                         location: Some(Location {
                             label: Label {
@@ -1793,6 +1848,7 @@ tuple has {} elements so the highest valid index is {}.",
                         title: "Type mismatch".into(),
                         text,
                         hint: None,
+                        code: None,
                         level: Level::Error,
                         location: Some(Location {
                             label: Label {
@@ -1815,6 +1871,7 @@ we can continue."
                         title: "Type mismatch".into(),
                         text,
                         hint: None,
+                        code: None,
                         level: Level::Error,
                         location: Some(Location {
                             label: Label {
@@ -1837,6 +1894,7 @@ function and try again."
                         title: "Unknown type for record access".into(),
                         text,
                         hint: None,
+                        code: None,
                         level: Level::Error,
                         location: Some(Location {
                             label: Label {
@@ -1934,6 +1992,7 @@ allowed at the end of a bin pattern.")],
                         title: "Invalid bit array segment".into(),
                         text,
                         hint: None,
+                        code: None,
                         level: Level::Error,
                         location: Some(Location {
                             label: Label {
@@ -1951,6 +2010,7 @@ allowed at the end of a bin pattern.")],
                     title: "Invalid record constructor".into(),
                     text: "Only record constructors can be used with the update syntax.".into(),
                     hint: None,
+                    code: None,
                     level: Level::Error,
                     location: Some(Location {
                         label: Label {
@@ -1968,6 +2028,7 @@ allowed at the end of a bin pattern.")],
                     text: "We need to know the exact type here so type holes cannot be used."
                         .into(),
                     hint: None,
+                    code: None,
                     level: Level::Error,
                     location: Some(Location {
                         label: Label {
@@ -1989,6 +2050,7 @@ Try a different name for this module."
                         title: "Reserved module name".into(),
                         text,
                         hint: None,
+                        code: None,
                         location: None,
                         level: Level::Error,
                     }
@@ -2004,6 +2066,7 @@ Try a different name for this module."
                         title: "Invalid module name".into(),
                         text,
                         hint: None,
+                        code: None,
                         location: None,
                         level: Level::Error,
                     }
@@ -2038,6 +2101,7 @@ value, or use `let assert` rather than `let`."
                         title: "Not exhaustive pattern match".into(),
                         text,
                         hint: None,
+                        code: None,
                         level: Level::Error,
                         location: Some(Location {
                             label: Label {
@@ -2055,6 +2119,7 @@ value, or use `let assert` rather than `let`."
                     title: "Argument name already used".into(),
                     text: format!("Two `{name}` arguments have been defined for this function."),
                     hint: None,
+                    code: None,
                     level: Level::Error,
                     location: Some(Location {
                         label: Label {
@@ -2071,6 +2136,7 @@ value, or use `let assert` rather than `let`."
                     title: "Unlabelled argument after labelled argument".into(),
                     text: wrap("All unlabelled arguments must come before any labelled arguments."),
                     hint: None,
+                    code: None,
                     level: Level::Error,
                     location: Some(Location {
                         label: Label {
@@ -2094,6 +2160,7 @@ forever in a loop, and we'd never get the final type.",
                         title: "Type cycle".into(),
                         text,
                         hint: None,
+                        code: None,
                         level: Level::Error,
                         location: Some(Location {
                             label: Label {
@@ -2122,6 +2189,7 @@ so we can tell what type of values they accept and return.",
                         title: "Missing type annotation".into(),
                         text,
                         hint: None,
+                        code: None,
                         level: Level::Error,
                         location: Some(Location {
                             label: Label {
@@ -2144,6 +2212,7 @@ using the `@external` attribute."
                         title: "Function without an implementation".into(),
                         text,
                         hint: None,
+                        code: None,
                         level: Level::Error,
                         location: Some(Location {
                             label: Label {
@@ -2170,6 +2239,7 @@ implementation but the module path `{module}` is not valid."
                         title: "Invalid JavaScript module".into(),
                         text,
                         hint: None,
+                        code: None,
                         level: Level::Error,
                         location: Some(Location {
                             label: Label {
@@ -2196,6 +2266,7 @@ implementation but the function name `{function}` is not valid."
                         title: "Invalid JavaScript function".into(),
                         text,
                         hint: None,
+                        code: None,
                         level: Level::Error,
                         location: Some(Location {
                             label: Label {
@@ -2227,6 +2298,7 @@ implementation but the function name `{function}` is not valid."
                     title: "Syntax error".into(),
                     text,
                     hint: None,
+                    code: None,
                     level: Level::Error,
                     location: Some(Location {
                         label: Label {
@@ -2253,6 +2325,7 @@ cycle to continue.",
                     title: "Import cycle".into(),
                     text,
                     hint: None,
+                    code: None,
                     level: Level::Error,
                     location: None,
                 }
@@ -2271,6 +2344,7 @@ cycle to continue.",
                     title: "Dependency cycle".into(),
                     text,
                     hint: None,
+                    code: None,
                     level: Level::Error,
                     location: None,
                 }
@@ -2292,6 +2366,7 @@ but it cannot be found."
                     title: "Unknown import".into(),
                     text,
                     hint: None,
+                    code: None,
                     level: Level::Error,
                     location: Some(Location {
                         label: Label {
@@ -2323,6 +2398,7 @@ but it cannot be found."
                         err,
                     ),
                     hint: None,
+                    code: None,
                     location: None,
                     level: Level::Error,
                 }
@@ -2341,6 +2417,7 @@ but it cannot be found."
                     title: "These files have not been formatted".into(),
                     text,
                     hint: None,
+                    code: None,
                     location: None,
                     level: Level::Error,
                 }
@@ -2358,6 +2435,7 @@ Fix the warnings and try again."
                     title: format!("{count} {word_warning} generated."),
                     text,
                     hint: None,
+                    code: None,
                     location: None,
                     level: Level::Error,
                 }
@@ -2368,6 +2446,7 @@ Fix the warnings and try again."
                     title: "Unsupported feature for compilation target".into(),
                     text: format!("{feature} is not supported for JavaScript compilation"),
                     hint: None,
+                    code: None,
                     level: Level::Error,
                     location: Some(Location {
                         label: Label {
@@ -2396,6 +2475,7 @@ The error from the package manager client was:
                     title: "Failed to download package".into(),
                     text,
                     hint: None,
+                    code: None,
                     location: None,
                     level: Level::Error,
                 }
@@ -2412,6 +2492,7 @@ The error from the HTTP client was:
                     title: "HTTP error".into(),
                     text,
                     hint: None,
+                    code: None,
                     location: None,
                     level: Level::Error,
                 }
@@ -2428,6 +2509,7 @@ The error from the parser was:
                     title: "Invalid version format".into(),
                     text,
                     hint: None,
+                    code: None,
                     location: None,
                     level: Level::Error,
                 }
@@ -2440,6 +2522,7 @@ The error from the parser was:
                     title: "Failed to create canonical path".into(),
                     text,
                     hint: None,
+                    code: None,
                     location: None,
                     level: Level::Error,
                 }
@@ -2458,6 +2541,7 @@ The error from the version resolver library was:
                     title: "Dependency resolution failed".into(),
                     text,
                     hint: None,
+                    code: None,
                     location: None,
                     level: Level::Error,
                 }
@@ -2467,6 +2551,7 @@ The error from the version resolver library was:
                 title: "Git dependencies are not currently supported".into(),
                 text: "Please remove all git dependencies from the gleam.toml file".into(),
                 hint: None,
+                code: None,
                 location: None,
                 level: Level::Error,
             },
@@ -2485,6 +2570,7 @@ The error from the version resolver library was:
                     title: "Wrong dependency provided".into(),
                     text,
                     hint: None,
+                    code: None,
                     location: None,
                     level: Level::Error,
                 }
@@ -2504,6 +2590,7 @@ The error from the version resolver library was:
                     title: "Conflicting provided dependencies".into(),
                     text,
                     hint: None,
+                    code: None,
                     location: None,
                     level: Level::Error,
                 }
@@ -2518,6 +2605,7 @@ dev-dependencies sections of the gleam.toml file."
                     title: "Dependency duplicated".into(),
                     text,
                     hint: None,
+                    code: None,
                     location: None,
                     level: Level::Error,
                 }
@@ -2549,6 +2637,7 @@ licences = ["Apache-2.0"]"#
                     title: "Missing required package fields".into(),
                     text,
                     hint: None,
+                    code: None,
                     location: None,
                     level: Level::Error,
                 }
@@ -2562,6 +2651,7 @@ because dependency {} is not a Hex dependency",
                     package
                 ),
                 hint: None,
+                code: None,
                 location: None,
                 level: Level::Error,
             },
@@ -2583,6 +2673,7 @@ issue in our tracker: https://github.com/gleam-lang/gleam/issues",
                     title: "Unsupported build tool".into(),
                     text,
                     hint: None,
+                    code: None,
                     location: None,
                     level: Level::Error,
                 }
@@ -2601,6 +2692,7 @@ issue in our tracker: https://github.com/gleam-lang/gleam/issues",
                     title: "Failed to open docs".into(),
                     text,
                     hint: None,
+                    code: None,
                     level: Level::Error,
                     location: None,
                 }
@@ -2620,6 +2712,7 @@ but you are using v{}.",
                     title: "Incompatible Gleam version".into(),
                     text,
                     hint: None,
+                    code: None,
                     location: None,
                     level: Level::Error,
                 }
@@ -2647,6 +2740,7 @@ but you are using v{}.",
                     hint,
                     location: None,
                     level: Level::Error,
+                    code: None,
                 }
             }
 
@@ -2657,6 +2751,7 @@ but you are using v{}.",
                 level: Level::Error,
                 location: None,
                 hint: None,
+                code: None,
             },
         }
     }

@@ -572,7 +572,7 @@ fn diagnostic_to_lsp(diagnostic: Diagnostic) -> Vec<lsp::Diagnostic> {
     let main = lsp::Diagnostic {
         range: src_span_to_lsp_range(location.label.span, &line_numbers),
         severity: Some(severity),
-        code: None,
+        code: diagnostic.code,
         code_description: None,
         source: None,
         message: text,

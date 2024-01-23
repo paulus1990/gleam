@@ -160,7 +160,7 @@ impl Warning {
                             },
                             extra_labels: Vec::new(),
                         }),
-                        code: None
+                        code: None,
                     }
                 }
 
@@ -180,7 +180,7 @@ impl Warning {
                             },
                             extra_labels: Vec::new(),
                         }),
-                        code: None
+                        code: None,
                     }
                 }
             },
@@ -196,7 +196,7 @@ impl Warning {
                     "Rename `{}` to be valid, or remove this file from the project source.",
                     path
                 )),
-                code: None
+                code: None,
             },
             Self::Type { path, warning, src } => match warning {
                 type_::Warning::Todo {
@@ -244,7 +244,7 @@ expression.",
                             extra_labels: Vec::new(),
                         }),
                         hint: None,
-                        code: None
+                        code: None,
                     }
                 }
 
@@ -262,7 +262,7 @@ expression.",
                         },
                         extra_labels: Vec::new(),
                     }),
-                    code: None
+                    code: None,
                 },
 
                 type_::Warning::UnusedLiteral { location } => Diagnostic {
@@ -279,7 +279,7 @@ expression.",
                         },
                         extra_labels: Vec::new(),
                     }),
-                    code: None
+                    code: None,
                 },
 
                 type_::Warning::NoFieldsRecordUpdate { location } => Diagnostic {
@@ -298,7 +298,7 @@ expression.",
                         },
                         extra_labels: Vec::new(),
                     }),
-                    code: None
+                    code: None,
                 },
 
                 type_::Warning::AllFieldsRecordUpdate { location } => Diagnostic {
@@ -315,7 +315,7 @@ expression.",
                         },
                         extra_labels: Vec::new(),
                     }),
-                    code: None
+                    code: None,
                 },
 
                 type_::Warning::UnusedType {
@@ -345,7 +345,7 @@ expression.",
                             },
                             extra_labels: Vec::new(),
                         }),
-                        code: None
+                        code: None,
                     }
                 }
 
@@ -376,7 +376,7 @@ expression.",
                             },
                             extra_labels: Vec::new(),
                         }),
-                        code: None
+                        code: None,
                     }
                 }
 
@@ -394,7 +394,7 @@ expression.",
                         },
                         extra_labels: Vec::new(),
                     }),
-                    code: None
+                    code: Some(lsp_types::NumberOrString::String("UNUSED_IMPORT".into())),
                 },
 
                 type_::Warning::UnusedImportedModuleAlias { location, .. } => Diagnostic {
@@ -411,7 +411,7 @@ expression.",
                         },
                         extra_labels: Vec::new(),
                     }),
-                    code: None
+                    code: None,
                 },
 
                 type_::Warning::UnusedImportedValue { location, .. } => Diagnostic {
@@ -428,7 +428,7 @@ expression.",
                         },
                         extra_labels: Vec::new(),
                     }),
-                    code: None
+                    code: None,
                 },
 
                 type_::Warning::UnusedPrivateModuleConstant { location, .. } => Diagnostic {
@@ -445,7 +445,7 @@ expression.",
                         },
                         extra_labels: Vec::new(),
                     }),
-                    code: None
+                    code: None,
                 },
 
                 type_::Warning::UnusedPrivateFunction { location, .. } => Diagnostic {
@@ -462,7 +462,7 @@ expression.",
                         },
                         extra_labels: Vec::new(),
                     }),
-                    code: None
+                    code: None,
                 },
 
                 type_::Warning::UnusedVariable { location, name, .. } => Diagnostic {
@@ -479,7 +479,7 @@ expression.",
                         },
                         extra_labels: Vec::new(),
                     }),
-                    code: None
+                    code: None,
                 },
                 type_::Warning::UnnecessaryDoubleIntNegation { location } => Diagnostic {
                     title: "Unnecessary double negation (--) on integer.".into(),
@@ -495,7 +495,7 @@ expression.",
                         },
                         extra_labels: Vec::new(),
                     }),
-                    code: None
+                    code: None,
                 },
                 type_::Warning::UnnecessaryDoubleBoolNegation { location } => Diagnostic {
                     title: "Unnecessary double negation (!!) on bool.".into(),
@@ -511,7 +511,7 @@ expression.",
                         },
                         extra_labels: Vec::new(),
                     }),
-                    code: None
+                    code: None,
                 },
                 type_::Warning::InefficientEmptyListCheck { location, kind } => {
                     use type_::error::EmptyListCheckKind;
@@ -541,7 +541,7 @@ need to know if the list is empty or not.
                             },
                             extra_labels: Vec::new(),
                         }),
-                        code: None
+                        code: None,
                     }
                 }
 
@@ -575,7 +575,7 @@ Run this command to add it to your dependencies:
                             },
                             extra_labels: Vec::new(),
                         }),
-                        code: None
+                        code: None,
                     }
                 }
 
@@ -611,7 +611,7 @@ Run this command to add it to your dependencies:
                             },
                             extra_labels: Vec::new(),
                         }),
-                        code: None
+                        code: None,
                     }
                 }
 
@@ -631,7 +631,7 @@ Run this command to add it to your dependencies:
                             },
                             extra_labels: Vec::new(),
                         }),
-                        code: None
+                        code: None,
                     }
                 }
 
@@ -656,7 +656,7 @@ Run this command to add it to your dependencies:
                             },
                             extra_labels: Vec::new(),
                         }),
-                        code: None
+                        code: None,
                     }
                 }
             },
