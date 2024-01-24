@@ -1,4 +1,4 @@
-use lsp_types::{CodeAction, Url};
+use lsp_types::{CodeAction, Diagnostic, Url};
 
 #[derive(Debug)]
 pub struct CodeActionBuilder {
@@ -38,6 +38,13 @@ impl CodeActionBuilder {
 
     pub fn preferred(mut self, is_preferred: bool) -> Self {
         self.action.is_preferred = Some(is_preferred);
+        self
+    }
+
+    pub fn diagnostics(mut self, diagnostic: Diagnostic) -> Self {
+        let mut diagnostics = self.action.diagnostics.take().unwrap_or_default();
+        diagnostics.push(diagnostic);
+        self.action.diagnostics = Some(diagnostics);
         self
     }
 

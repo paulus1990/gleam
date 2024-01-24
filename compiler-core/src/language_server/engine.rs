@@ -16,7 +16,7 @@ use crate::{
 use camino::Utf8PathBuf;
 use ecow::EcoString;
 use lsp::CodeAction;
-use lsp_types::{self as lsp, Hover, HoverContents, MarkedString, Url};
+use lsp_types::{self as lsp, Diagnostic, Hover, HoverContents, MarkedString, Url};
 use std::sync::Arc;
 use strum::IntoEnumIterator;
 
@@ -228,7 +228,7 @@ where
                 return Ok(None);
             };
 
-            dbg!(&params.context);
+            //Provide the codeactions for each associated diagnostic
             params.context.diagnostics.iter().for_each(|diag| {
                 provide_codeaction_for_diagnostic(diag, module, &params, &mut actions)
             });
@@ -423,13 +423,13 @@ where
 }
 
 fn provide_codeaction_for_diagnostic(
-    diag: &lsp::Diagnostic,
+    diag: &Diagnostic,
     module: &Module,
     params: &lsp::CodeActionParams,
     actions: &mut Vec<CodeAction>,
 ) {
     if diag.code == Some(lsp::NumberOrString::String("UNUSED_IMPORT".into())) {
-        code_action_unused_imports(module, &params, actions);
+        code_action_unused_imports(module, &params, actions, &diag);
     }
 }
 
@@ -591,6 +591,7 @@ fn code_action_unused_imports(
     module: &Module,
     params: &lsp::CodeActionParams,
     actions: &mut Vec<CodeAction>,
+    diagnostic: &Diagnostic,
 ) {
     let uri = &params.text_document.uri;
     let unused = &module.ast.type_info.unused_imports;
@@ -625,5 +626,6 @@ fn code_action_unused_imports(
         .kind(lsp_types::CodeActionKind::QUICKFIX)
         .changes(uri.clone(), edits)
         .preferred(true)
+        .diagnostics(diagnostic.clone())
         .push_to(actions);
 }
