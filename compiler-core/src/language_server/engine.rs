@@ -11,6 +11,7 @@ use crate::{
     line_numbers::LineNumbers,
     paths::ProjectPaths,
     type_::{pretty::Printer, PreludeType, Type, ValueConstructorVariant},
+    warning::DiagnosticCode,
     Error, Result, Warning,
 };
 use camino::Utf8PathBuf;
@@ -428,8 +429,15 @@ fn provide_codeaction_for_diagnostic(
     params: &lsp::CodeActionParams,
     actions: &mut Vec<CodeAction>,
 ) {
-    if diag.code == Some(lsp::NumberOrString::String("UNUSED_IMPORT".into())) {
-        code_action_unused_imports(module, &params, actions, &diag);
+    if let Some(lsp::NumberOrString::String(s)) = &diag.code {
+        if let Some(code) = DiagnosticCode::from_str(s) {
+            match code {
+                DiagnosticCode::UnusedImport => {
+                    code_action_unused_imports(module, &params, actions, &diag)
+                }
+                DiagnosticCode::UnusedVariable => (),
+            }
+        }
     }
 }
 

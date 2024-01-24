@@ -140,6 +140,29 @@ pub enum Warning {
     },
 }
 
+#[derive(Debug, Copy, Clone)]
+pub enum DiagnosticCode {
+    UnusedImport,
+    UnusedVariable,
+}
+
+impl DiagnosticCode {
+    fn to_string(self) -> String {
+        match self {
+            DiagnosticCode::UnusedImport => "UNUSED_IMPORT".into(),
+            DiagnosticCode::UnusedVariable => "UNUSED_VARIABLE".into(),
+        }
+    }
+
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "UNUSED_IMPORT" => Some(DiagnosticCode::UnusedImport),
+            "UNUSED_VARIABLE" => Some(DiagnosticCode::UnusedVariable),
+            _ => None,
+        }
+    }
+}
+
 impl Warning {
     pub fn to_diagnostic(&self) -> Diagnostic {
         match self {
@@ -394,7 +417,9 @@ expression.",
                         },
                         extra_labels: Vec::new(),
                     }),
-                    code: Some(lsp_types::NumberOrString::String("UNUSED_IMPORT".into())),
+                    code: Some(lsp_types::NumberOrString::String(
+                        DiagnosticCode::UnusedImport.to_string(),
+                    )),
                 },
 
                 type_::Warning::UnusedImportedModuleAlias { location, .. } => Diagnostic {
