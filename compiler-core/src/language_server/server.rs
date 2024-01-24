@@ -586,6 +586,7 @@ fn diagnostic_to_lsp(diagnostic: Diagnostic) -> Vec<lsp::Diagnostic> {
             let hint = lsp::Diagnostic {
                 severity: Some(lsp::DiagnosticSeverity::HINT),
                 message: hint,
+                code: None,
                 ..main.clone()
             };
             vec![main, hint]
