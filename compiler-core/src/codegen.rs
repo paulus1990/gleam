@@ -20,8 +20,8 @@ use crate::analyse::TargetSupport;
 use crate::ast::{ArgNames, Assignment, CallArg, Definition, Function, Pattern, Statement, TypedExpr};
 use crate::type_::{ModuleInterface, Type};
 use camino::Utf8Path;
-use wast::core::Instruction::{I64Add, I64Const, LocalSet};
-use wast::core::{Local, ModuleField, ModuleKind};
+use wast::core::Instruction::{I64Add, I64Const, LocalSet, StructGet};
+use wast::core::{Local, ModuleField, ModuleKind, RefType, StructAccess};
 
 fn trying_to_make_module(
     program: &str,
@@ -65,14 +65,14 @@ struct WasmThing {
     //AST
     //Id is pretty private :( identifiers: HashMap<&'a str, Id<'a>>, // Symbol table, but not really, wanted to use for wasm names but unnecessary byte code. Will matter if we do in Gleam  "let x=1; ds(x);"
     identifiers: HashMap<String, usize>, //globals?
-    known_types: HashMap<&'static str, ValType<'static>>,
+    known_types: RefCell<HashMap<&'static str, ValType<'static>>>,
     function_names: HashMap<&'static str,(&'static str, u32)>,
 }
 
-fn known_types() -> HashMap<&'static str, ValType<'static>> {
+fn known_types() -> RefCell<HashMap<&'static str, ValType<'static>>> {
     let mut map = HashMap::new();
     let _ = map.insert("Int", ValType::I64);
-    map
+    RefCell::new(map)
 }
 
 impl WasmThing {
@@ -106,6 +106,14 @@ impl WasmThing {
                 // let _ = self.identifiers.insert(name.to_string(),i); //TODO remove this, will be wrong!
                 funcidx = funcidx + 1;
             }
+
+            if let Definition::CustomType(gleam_custom_type)  = definition{
+                let name = gleam_custom_type.name.to_string();
+                let name = Box::new(name);
+                let name = Box::leak(name);
+                let _ = self.function_names.insert(name, (name, funcidx));
+                funcidx = funcidx + 1; //TODO check if same index!
+            }
         }
 
         for gleam_definition in &self.gleam_module.definitions {
@@ -132,6 +140,8 @@ impl WasmThing {
             }
             Definition::CustomType(gleam_custom_type) => {
                 //TODO, add to types but how in the AST we have?
+                let name  = self.function_names.get(gleam_custom_type.name.as_str()).unwrap().0;
+                let _ = self.known_types.borrow_mut().insert(name,ValType::Ref(RefType::r#struct()));
             },
             _ => todo!()
         }
@@ -310,8 +320,25 @@ impl WasmThing {
                 };
                 instrs.push(call);
                 return (instrs,locals)
-            }
-            _ => todo!(),
+            },
+            TypedExpr::RecordAccess{ location, typ, label, index, record }  => {
+                //TODO so uhm I'd expect stuff before..... oh but take it from the record? Because looked like there was a call to a val constructor but I don't have that at all yet...
+                //TODO what is s vs. u in get on wasm side?
+                // dbg!("whut");
+                // dbg!(record);
+                // dbg!(record.type_().named_type_name().unwrap().1);
+                // dbg!(label); // "name"
+                // dbg!(&typ.named_type_name().unwrap()); //Dangit this is module, int tuple.
+                let struct_idx = self.function_names.get(record.type_().named_type_name().unwrap().1.as_str()).unwrap().1;
+                // let struct_idx = 12;
+                let struct_get = StructGet(StructAccess{
+                    r#struct: Index::Num(struct_idx,Span::from_offset(0)),//TODO offset!
+                    field: Index::Num(*index as u32, Span::from_offset(0)), //TODO offset!
+                });
+                // todo!()
+                return (vec![struct_get],vec![]);
+            },
+            x => {dbg!(x);todo!()},
         }
         (instructions,locals)
     }
@@ -327,6 +354,7 @@ impl WasmThing {
         match type_ {
             Type::Named { name, .. } => self
                 .known_types
+                .borrow()
                 .get(name.as_str())
                 .expect("For now we expect to know all types")
                 .clone(),
@@ -426,6 +454,13 @@ fn wasm_5nd() {
             cat1.name + cat1.cuteness
           }",
     );
+
+    //TODO Uncaught (in promise) CompileError: wasm validation error: at offset 43: type mismatch: expression has type i64 but expected structref
+    // but we do get bytes.... not promising! Since encode doesn't catch it....
+
+    // dbg!(&gleam_module);
+    // assert!(false);
+    //TODO what the cat type looks like is in module.types
 
     let w = WasmThing {
         gleam_module,
