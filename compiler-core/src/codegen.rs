@@ -10,254 +10,18 @@ use crate::{
     Result,
 };
 use ecow::EcoString;
-use im::{HashMap, HashSet};
+use im::HashMap;
 use itertools::Itertools;
 use std::cell::RefCell;
 use std::{fmt::Debug, fs::File, io::Write, mem, sync::Arc};
-use wast::{
-    core::{Expression, Func, FuncKind, FunctionType, InlineExport, Instruction, TypeUse, ValType},
-    token::{Id, Index, NameAnnotation, Span},
-    Error,
-};
+use wast::{core::{Expression, Func, FuncKind, FunctionType, InlineExport, Instruction, TypeUse, ValType}, token::{Id, Index, NameAnnotation, Span}, Error};
 
 use crate::analyse::TargetSupport;
-use crate::ast::{ArgNames, Assignment, Definition, Function, Pattern, Statement, TypedExpr};
+use crate::ast::{ArgNames, Assignment, CallArg, Definition, Function, Pattern, Statement, TypedExpr};
 use crate::type_::{ModuleInterface, Type};
 use camino::Utf8Path;
 use wast::core::Instruction::{I64Add, I64Const, LocalSet};
 use wast::core::{Local, ModuleField, ModuleKind};
-// use crate::ast::{Definition, TypedExpr};
-// use crate::type_::{ModuleInterface, Type};
-//
-//
-// // #[derive(Debug)]
-// // pub struct Wasm<'a> {
-// //     // build_directory: &'a Utf8Path,
-// //     // include_directory: &'a Utf8Path,
-// // }
-//
-//
-// // impl<'a> Wasm<'a> {
-// //     pub fn render<Writer: FileSystemWriter>(
-// //         &self,
-// //         writer: Writer,
-// //         modules: &[Module],
-// //     ) -> Result<()> {}
-// // }
-//
-//
-// //TODO sure String is terrible etc. etc. can imporve later. And it's actually WAT lol.
-// fn wasm_definition(statement: crate::ast::TypedDefinition) -> String {
-//     let mut ret = String::new();
-//
-//     // let def: TypedDefinition = statement.definition;
-//     match statement {
-//         crate::ast::Definition::Function(crate::ast::Function { location, end_position, name, arguments, body, public, deprecation, return_annotation, return_type, documentation, external_erlang, external_javascript, supported_targets }) => {
-//                 let mut params = String::new();
-//                 // dbg!(&arguments);
-//                 // let len = arguments.len();
-//                 // dbg!(len);
-//                 for param in arguments {
-//                     dbg!(&param.names);
-//
-//                     let name = match &param.names {
-//                         crate::ast::ArgNames::Discard { name } => todo!(),
-//                         crate::ast::ArgNames::LabelledDiscard { label, name } => todo!(),
-//                         crate::ast::ArgNames::Named { name } => name,
-//                         crate::ast::ArgNames::NamedLabelled { name, label } => todo!(),
-//                     };
-//
-//                     //TODO duplicated
-//                     let type_ = match param.type_.as_ref() {
-//                         crate::type_::Type::Named { public, module, name, args } if name == "Int" => {
-//                             "i32"
-//                         },
-//                         crate::type_::Type::Named { public, module, name, args } => todo!(),
-//                         crate::type_::Type::Fn { args, retrn } => todo!(),
-//                         crate::type_::Type::Var { type_ } => todo!(),
-//                         crate::type_::Type::Tuple { elems } => todo!(),
-//                     };
-//
-//                     params = format!("{params} (param ${name} {type_})");
-//                 }
-//
-//
-//                 // let result = match return_annotation {
-//                 //     Some(crate::ast::TypeAst::Var(crate::ast::TypeAstVar{
-//                 //         name,
-//                 //         location
-//                 //     })) => {
-//                 //         // TODO hmmm the name is a string is that the type info?
-//                 //         "(result {name})"
-//                 //     },
-//                 //     None => "",
-//                 //     _ => todo!()
-//                 // };
-//                 let hmm: std::sync::Arc<crate::type_::Type> = return_type.clone(); // Why is it unit here but &Arc<Type> in typescript? Cause that was a typed module, now here too
-//                 dbg!(hmm);
-//
-//
-//
-//                 let mut result = "";
-//
-//
-//                 match return_type.as_ref() {
-//                     crate::type_::Type::Named {
-//                         module,name,public,args
-//                         // module: ecow::EcoString::from("Gleam"),
-//                         // name: "Int",
-//                         // ..
-//                     } => {
-//                         if name.eq_ignore_ascii_case("int") && module.eq_ignore_ascii_case("gleam") {
-//                             // TODO the type matching for sure needs abstraction I think the other backends do preprocessing and maybe create a mapping or something?
-//                             // at least also create (make the correct representation I think) the custom types etc.
-//                             // Also need to check is a Gleam::Int really a i32
-//                             // Might be a step check the Gleam module types and map them to WASM, good idea to build on for custom types
-//                             result = "(result i32)"
-//                         } else {
-//                             todo!()
-//                         }
-//                     },
-//                     _ => todo!()
-//                 }
-//
-//                 let mut func_body = String::new();
-//
-//
-//                 dbg!(&body);
-//
-//                 for expr in body {
-//                    let expr_s =  match expr {
-//                         crate::ast::Statement::Expression(expr) => {
-//                             match expr {
-//                                 crate::ast::TypedExpr::BinOp { location, typ, name, left, right } if name == BinOp::AddInt => {
-//                                     let lhs = match left.as_ref() {
-//                                         crate::ast::TypedExpr::Var { location, constructor, name } => {format!("(local.get ${name})")},
-//                                         crate::ast::TypedExpr::Int { location, typ, value } => todo!(),
-//                                         crate::ast::TypedExpr::Float { location, typ, value } => todo!(),
-//                                         crate::ast::TypedExpr::String { location, typ, value } => todo!(),
-//                                         crate::ast::TypedExpr::Block { location, statements } => todo!(),
-//                                         crate::ast::TypedExpr::Pipeline { location, assignments, finally } => todo!(),
-//                                         crate::ast::TypedExpr::Fn { location, typ, is_capture, args, body, return_annotation } => todo!(),
-//                                         crate::ast::TypedExpr::List { location, typ, elements, tail } => todo!(),
-//                                         crate::ast::TypedExpr::Call { location, typ, fun, args } => todo!(),
-//                                         crate::ast::TypedExpr::BinOp { location, typ, name, left, right } => todo!(),
-//                                         crate::ast::TypedExpr::Case { location, typ, subjects, clauses } => todo!(),
-//                                         crate::ast::TypedExpr::RecordAccess { location, typ, label, index, record } => todo!(),
-//                                         crate::ast::TypedExpr::ModuleSelect { location, typ, label, module_name, module_alias, constructor } => todo!(),
-//                                         crate::ast::TypedExpr::Tuple { location, typ, elems } => todo!(),
-//                                         crate::ast::TypedExpr::TupleIndex { location, typ, index, tuple } => todo!(),
-//                                         crate::ast::TypedExpr::Todo { location, message, type_ } => todo!(),
-//                                         crate::ast::TypedExpr::Panic { location, message, type_ } => todo!(),
-//                                         crate::ast::TypedExpr::BitArray { location, typ, segments } => todo!(),
-//                                         crate::ast::TypedExpr::RecordUpdate { location, typ, spread, args } => todo!(),
-//                                         crate::ast::TypedExpr::NegateBool { location, value } => todo!(),
-//                                         crate::ast::TypedExpr::NegateInt { location, value } => todo!(),
-//                                     };
-//
-//
-//                                     // TODO obv duplication from above
-//                                     let rhs = match right.as_ref() {
-//                                         crate::ast::TypedExpr::Var { location, constructor, name } => {format!("(local.get ${name})")},
-//                                         _ => todo!()
-//                                     };
-//
-//                                     format!("(i32.add {lhs} {rhs})")
-//                                 },
-//                                 crate::ast::TypedExpr::Int { location, typ, value } => todo!(),
-//                                 crate::ast::TypedExpr::Float { location, typ, value } => todo!(),
-//                                 crate::ast::TypedExpr::String { location, typ, value } => todo!(),
-//                                 crate::ast::TypedExpr::Block { location, statements } => todo!(),
-//                                 crate::ast::TypedExpr::Pipeline { location, assignments, finally } => todo!(),
-//                                 crate::ast::TypedExpr::Var { location, constructor, name } => todo!(),
-//                                 crate::ast::TypedExpr::Fn { location, typ, is_capture, args, body, return_annotation } => todo!(),
-//                                 crate::ast::TypedExpr::List { location, typ, elements, tail } => todo!(),
-//                                 crate::ast::TypedExpr::Call { location, typ, fun, args } => todo!(),
-//                                 crate::ast::TypedExpr::BinOp { location, typ, name, left, right } => todo!(),
-//                                 crate::ast::TypedExpr::Case { location, typ, subjects, clauses } => todo!(),
-//                                 crate::ast::TypedExpr::RecordAccess { location, typ, label, index, record } => todo!(),
-//                                 crate::ast::TypedExpr::ModuleSelect { location, typ, label, module_name, module_alias, constructor } => todo!(),
-//                                 crate::ast::TypedExpr::Tuple { location, typ, elems } => todo!(),
-//                                 crate::ast::TypedExpr::TupleIndex { location, typ, index, tuple } => todo!(),
-//                                 crate::ast::TypedExpr::Todo { location, message, type_ } => todo!(),
-//                                 crate::ast::TypedExpr::Panic { location, message, type_ } => todo!(),
-//                                 crate::ast::TypedExpr::BitArray { location, typ, segments } => todo!(),
-//                                 crate::ast::TypedExpr::RecordUpdate { location, typ, spread, args } => todo!(),
-//                                 crate::ast::TypedExpr::NegateBool { location, value } => todo!(),
-//                                 crate::ast::TypedExpr::NegateInt { location, value } => todo!(),
-//                             }
-//                         },
-//                         crate::ast::Statement::Assignment(_) => todo!(),
-//                         crate::ast::Statement::Use(_) => todo!(),
-//                     };
-//                     func_body = format!("{func_body}\n{expr_s}");
-//                 }
-//
-//                 ret = std::format!("(func ${name} {params} {result}
-//                     {func_body}
-//                 )");
-//
-//
-//         },
-//         crate::ast::Definition::TypeAlias(_) => todo!(),
-//         crate::ast::Definition::CustomType(_) => todo!(),
-//         crate::ast::Definition::Import(_) => todo!(),
-//         crate::ast::Definition::ModuleConstant(_) => todo!(),
-//     }
-//
-//     ret
-//
-// }
-//
-// #[test]
-// fn wasm_1st() {
-//     // cargo test --package gleam-core --lib -- codegen::wasm_1st --exact --nocapture
-//     let module = trying_to_make_module();
-//
-//
-//     // running 1 test
-//     // thread 'codegen::wasm_1st' panicked at 'Unable to find prelude in importable modules', compiler-core/src/type_/environment.rs:86:14
-//     // note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
-//     // test codegen::wasm_1st ... FAILED
-// // lol, need some prelude....................... to import. Interesting.. Has to have name Gleam and actually seems to supply types like Gleam::Int -> TODO check out
-//
-//
-//     let defs = module.definitions;
-//     let len = &defs.len();
-//     println!("{defs:?}\nlen: {len}");
-//
-// // Man TODO exports etc, so after the result so the function can be used externally etc. Find out if WASM has a main function concept????
-// for def in defs {
-//     let res = wasm_definition(def);
-//     let res = format!("(module {res})");
-//     println!("{res}");
-//     std::fs::write("/home/harm/git/gleam/exper/hmm.wat", res).expect("filewrite");
-//
-//     // Dang return is strange to find... Return annotation is None namely, has to be a typed module ;)
-//
-//     //wat2wasm exper/hmm.wat -o exper/hmm.wasm
-//
-//     // So interesting the WAT is fine when turned into WASM but things happen there too. But WAT output might be useful as an option anyway
-//     // (can add the source code comments to it for ex.), but making the WASM directly
-//     // is a choice! We can also output the WASM directly, or re-use wat2wasm or something that optimizes too so WAT is our real ouput..... Is a choice
-//
-//
-//     // Big things:
-//     // - Imports/Modules in general, I don't understand them.
-//     // - Took a hacky approach to getting the AST set-up, probably introduced blind spots this way; no holistic understanding.
-//     // - Output formats, and their optimality. So really need a better understanding of WASM, will make mapping easier too.
-//     // - General theory, but can move to practical sooner and let that guide? At this stage, then also check supervisor for hints here?
-//
-//     // Learned
-//     // - A(!) way to get a fast feedback loop, but probably needs improvement since now takes shortcuts.
-//     // - A wider view of the scope, the explicit todo!s in the match arms are all work todo, I mean the overarching abstractions seem not hard to abstract (allowing dedup etc.).
-//     //   Like the (module ...) needs the exports etc. can easily be a different level than introducing custom types a different level again from function bodies
-//     //   which is a different level again from correct type mapping to WASM etc. etc.. Fortunatly can check the ts/js/erlang existing stuff.
-//     // - This way of doing it is not extensible, a change in the gelam code to subtraction is conceptually EZPZ but this way in practice hard!
-//
-// }
-//
-// }
 
 fn trying_to_make_module(
     program: &str,
@@ -302,7 +66,7 @@ struct WasmThing {
     //Id is pretty private :( identifiers: HashMap<&'a str, Id<'a>>, // Symbol table, but not really, wanted to use for wasm names but unnecessary byte code. Will matter if we do in Gleam  "let x=1; ds(x);"
     identifiers: HashMap<String, usize>, //globals?
     known_types: HashMap<&'static str, ValType<'static>>,
-    names: HashMap<&'static str,&'static str>
+    function_names: HashMap<&'static str,(&'static str, u32)>,
 }
 
 fn known_types() -> HashMap<&'static str, ValType<'static>> {
@@ -330,14 +94,17 @@ impl WasmThing {
                         // let name = self.gleam_module.name;
 
         // self.names.insert("lol","lol");
-
+        let mut funcidx = 0;
         for definition in &self.gleam_module.definitions {
+            // TODO also struct defs
             if let Definition::Function(gleam_function) = definition{
                 //lol dump that on the heap... Not sure about this.... TODO check ecostring maybe has some way to do this already?
                 let name = gleam_function.name.to_string();
                 let name = Box::new(name);
                 let name = Box::leak(name);
-                let _ = self.names.insert(name, name);
+                let _ = self.function_names.insert(name, (name, funcidx));
+                // let _ = self.identifiers.insert(name.to_string(),i); //TODO remove this, will be wrong!
+                funcidx = funcidx + 1;
             }
         }
 
@@ -363,7 +130,10 @@ impl WasmThing {
             Definition::Function(gleam_function) => {
                 self.add_gleam_function_to_wasm_instructions(gleam_function);
             }
-            _ => todo!(),
+            Definition::CustomType(gleam_custom_type) => {
+                //TODO, add to types but how in the AST we have?
+            },
+            _ => todo!()
         }
     }
 
@@ -403,10 +173,10 @@ impl WasmThing {
         };
 
 
-        let export: InlineExport = if gleam_function.public {
+        let export: InlineExport<'_> = if gleam_function.public {
             // We can have a parser? Inline::parse(MyParser<'a>) That has a &'a to a ParseBuf<'a> which has a from str... beh but takes its lifetime
             InlineExport {
-                names: vec![*self.names.get(gleam_function.name.as_str()).unwrap()] //TODO borrow doesn't live long enough... Can't borrow function for 'a since in a for loop... Like the underlying thing lives long enough Or can I supply a &'a something here?
+                names: vec![self.function_names.get(gleam_function.name.as_str()).unwrap().0] //TODO borrow doesn't live long enough... Can't borrow function for 'a since in a for loop... Like the underlying thing lives long enough Or can I supply a &'a something here?
             }
         }
             else {
@@ -502,10 +272,45 @@ impl WasmThing {
                     Span::from_offset(location.start as usize),
                 ))],vec![]);
             },
-            TypedExpr::Int{ location, typ, value } => {
+            TypedExpr::Int{  value, .. } => {
                 //TODO type?
                return (vec![I64Const(value.parse().unwrap())],vec![]);
             },
+            TypedExpr::Call { location, fun, args, .. } => {
+                let mut instrs = Vec::with_capacity(args.len() + 1);
+                let mut locals = Vec::new();
+                for CallArg{value, ..} in args {
+                    // TODO Or this after call?
+                    // let mut new_scope = HashMap::new(); panics hehe, vars not in scope..
+                   let (mut is, mut ls) =  self.transform_gleam_expression(value, scope);
+                    instrs.append(&mut is);
+                    locals.append(&mut ls);
+                }
+
+                let fn_name = if let TypedExpr::Var{name, .. } = fun.as_ref() {
+                    //TODO the start end is stupid, besides Var has more info that gets to fn name directly, also it's the loc of the call not the func
+                    // self.start_end_names.get(&(location.start,location.end)).unwrap()
+                    name
+                } else {
+                    dbg!(&fun);
+                    todo!()
+                };
+
+                // let fn_name = if let &TypedExpr::Fn{location, .. } = fun.as_ref() {
+                //     self.start_end_names.get(&(location.start,location.end)).unwrap()
+                // } else {
+                //     dbg!(&fun);
+                //     todo!()
+                // };
+                // let fn_idx = self.names.get(fn_name).unwrap(); //TODO unwrap, maybe trust Gleam AST but check
+                let fn_idx = self.function_names.get(fn_name.as_str()).unwrap().1; //TODO unwrap, maybe trust Gleam AST but check
+                let call = Instruction::Call {   //TODO tail call use instead? CallReturn :)
+                    0: Index::Num(fn_idx,Span::from_offset(location.start as usize))
+                    // 0: Index::Id(Id::new(*fn_idx, Span::from_offset(location.start as usize))), //TODO ugh new is private
+                };
+                instrs.push(call);
+                return (instrs,locals)
+            }
             _ => todo!(),
         }
         (instructions,locals)
@@ -540,23 +345,16 @@ fn wasm_2n() {
           }",
     ); //TODO small change removed pub from fn! Since not exported in wasm yet.
 
-    // let w = WasmThing::new(gleam_module);
     let w = WasmThing {
         gleam_module,
         wasm_instructions: RefCell::new(vec![]),
         identifiers: Default::default(),
         known_types: known_types(), // TODO prolly need types imported and a whole thing when getting some more
-        names: HashMap::new()
+        function_names: HashMap::new(),
     };
     let res = w.transform().unwrap();
     let mut file = File::create("letstry.wasm").unwrap();
 
-    // let exp = [
-    //     0, 97, 115, 109, 1, 0, 0, 0, 1, 7, 1, 96, 2, 126, 126, 1, 126, 3, 2, 1, 0, 10, 9, 1, 7, 0,
-    //     124, 32, 0, 32, 1, 11,
-    // ]; //TODO could use the wasm parser instructions, they have the byte codes, add the magic bytes at the front :)
-
-    // assert_eq!(&res, &exp);
     let _ = file.write_all(&res);
     // assert!(false);
 }
@@ -569,209 +367,79 @@ fn wasm_3nd() {
     let gleam_module = trying_to_make_module(
         "pub fn add(x: Int, y: Int) -> Int {
             let z = 10
-            x + y + z
+            let a = 100
+            x + y + z + a
           }",
     );
 
-    // let w = WasmThing::new(gleam_module);
     let w = WasmThing {
         gleam_module,
         wasm_instructions: RefCell::new(vec![]),
         identifiers: Default::default(),
         known_types: known_types(), // TODO prolly need types imported and a whole thing when getting some more
-        names: HashMap::new()
+        function_names: HashMap::new(),
     };
     let res = w.transform().unwrap();
     let mut file = File::create("letstry.wasm").unwrap();
 
-    // let exp = [
-    //     0, 97, 115, 109, 1, 0, 0, 0, 1, 7, 1, 96, 2, 126, 126, 1, 126, 3, 2, 1, 0, 10, 9, 1, 7, 0,
-    //     124, 32, 0, 32, 1, 11,
-    // ]; //TODO could use the wasm parser instructions, they have the byte codes, add the magic bytes at the front :)
-
-    // assert_eq!(&res, &exp);
     let _ = file.write_all(&res);
     // assert!(false);
 }
 
-//     let mut module_fields = Vec::new();
-//
-//     for exp in gleam_module.definitions {
-//         match exp{
-//             crate::ast::Definition::Function(f) => {
-//
-//                 // let mut locals = [Local{ id: todo!(), name: todo!(), ty: todo!() };f.arguments.len()];
-//                 // let mut arguments = Vec::new();
-//                 let mut params: Box<[Local<'_>]> = Box::new([]);
-//                 let mut arguments = Vec::from(mem::take(&mut params));
-//                 for param in f.arguments.into_iter() {
-//                     let ty =  match param.type_.as_ref() {
-//                         crate::type_::Type::Named { public, module, name, args } => match name.as_str() {
-//                             "Int" => ValType::I64, //TODO take from symbol table? So we get custom types too?
-//                             _ => todo!()
-//                         },
-//                         crate::type_::Type::Fn { args, retrn } => todo!(),
-//                         crate::type_::Type::Var { type_ } => todo!(),
-//                         crate::type_::Type::Tuple { elems } => todo!(),
-//                     };
-//                     // let name = param.get_variable_name().map_or(None, |a| {
-//                     //     let x = a.to_owned();
-//                     //     Some(NameAnnotation{ name: &a})});
-//                     // let mut name = None;
-//
-//                     // if param.get_variable_name().is_some() {
-//                     //     let x = param.get_variable_name().unwrap().to_owned();
-//                     //     // let anno: NameAnnotation<'a> = NameAnnotation {name: &'staticx};
-//                     //     let bugger: &'static str =  &x;
-//                     //     let anno = NameAnnotation {name: *bugger};
-//                     //     name = Some(anno);
-//                     // }
-//
-//                     arguments.push(Local {
-//                         id: None,
-//                         name: None, //Bah I want the name but the lifetime... maybe we put the lifetime so we can own here and this func has the lifetime of the whole thind, whatever for now none
-//                         ty,
-//                     });
-//                 };
-//
-//                 // let mut instructions = [Expression;f.body.len()];
-//                 // let mut instructions = Vec::new();
-//                 // let mut params = [];
-//                 // let mut arguments = Vec::from(mem::take(&mut params));
-//                 let mut instrs: Box<[Instruction<'_>]> = Box::new([]);
-//                 let mut instructions = Vec::from(mem::take(&mut instrs));
-//                 for g_e in f.body.into_iter() {
-//                     match g_e {
-//                         crate::ast::Statement::Expression(inner_e) => {
-//                             match inner_e {
-//                                 // Today early afternoon 14/1 left-off here!
-//                                 crate::ast::TypedExpr::Int { location, typ, value } => todo!(),
-//                                 crate::ast::TypedExpr::Float { location, typ, value } => todo!(),
-//                                 crate::ast::TypedExpr::String { location, typ, value } => todo!(),
-//                                 crate::ast::TypedExpr::Block { location, statements } => todo!(),
-//                                 crate::ast::TypedExpr::Pipeline { location, assignments, finally } => todo!(),
-//                                 crate::ast::TypedExpr::Var { location, constructor, name } => todo!(),
-//                                 crate::ast::TypedExpr::Fn { location, typ, is_capture, args, body, return_annotation } => todo!(),
-//                                 crate::ast::TypedExpr::List { location, typ, elements, tail } => todo!(),
-//                                 crate::ast::TypedExpr::Call { location, typ, fun, args } => todo!(),
-//                                 crate::ast::TypedExpr::BinOp { location, typ, name, left, right } => {
-//                                     match name {
-//                                         BinOp::And => todo!(),
-//                                         BinOp::Or => todo!(),
-//                                         BinOp::Eq => todo!(),
-//                                         BinOp::NotEq => todo!(),
-//                                         BinOp::LtInt => todo!(),
-//                                         BinOp::LtEqInt => todo!(),
-//                                         BinOp::LtFloat => todo!(),
-//                                         BinOp::LtEqFloat => todo!(),
-//                                         BinOp::GtEqInt => todo!(),
-//                                         BinOp::GtInt => todo!(),
-//                                         BinOp::GtEqFloat => todo!(),
-//                                         BinOp::GtFloat => todo!(),
-//                                         BinOp::AddInt => instructions.push(Instruction::I64Add),
-//                                         BinOp::AddFloat => todo!(),
-//                                         BinOp::SubInt => todo!(),
-//                                         BinOp::SubFloat => todo!(),
-//                                         BinOp::MultInt => todo!(),
-//                                         BinOp::MultFloat => todo!(),
-//                                         BinOp::DivInt => todo!(),
-//                                         BinOp::DivFloat => todo!(),
-//                                         BinOp::RemainderInt => todo!(),
-//                                         BinOp::Concatenate => todo!(),
-//                                     };
-//
-//                                     instructions.push(Instruction::LocalGet(Index::Num(0, Span::from_offset(0)))); //TODO id is better but... ya know put it in a symbol table
-//                                     instructions.push(Instruction::LocalGet(Index::Num(1, Span::from_offset(0))));
-//                                     // match left {
-//                                     //  //TODO!
-//                                     // },
-//                                 }
-//                                 crate::ast::TypedExpr::Case { location, typ, subjects, clauses } => todo!(),
-//                                 crate::ast::TypedExpr::RecordAccess { location, typ, label, index, record } => todo!(),
-//                                 crate::ast::TypedExpr::ModuleSelect { location, typ, label, module_name, module_alias, constructor } => todo!(),
-//                                 crate::ast::TypedExpr::Tuple { location, typ, elems } => todo!(),
-//                                 crate::ast::TypedExpr::TupleIndex { location, typ, index, tuple } => todo!(),
-//                                 crate::ast::TypedExpr::Todo { location, message, type_ } => todo!(),
-//                                 crate::ast::TypedExpr::Panic { location, message, type_ } => todo!(),
-//                                 crate::ast::TypedExpr::BitArray { location, typ, segments } => todo!(),
-//                                 crate::ast::TypedExpr::RecordUpdate { location, typ, spread, args } => todo!(),
-//                                 crate::ast::TypedExpr::NegateBool { location, value } => todo!(),
-//                                 crate::ast::TypedExpr::NegateInt { location, value } => todo!(),
-//                             }
-//                         },
-//                         crate::ast::Statement::Assignment(_) => todo!(),
-//                         crate::ast::Statement::Use(_) => todo!(),
-//                     };
-//                 }
-//
-//                 let offset = f.location.start as usize;
-//                 let span = Span::from_offset(offset);
-//
-//
-//                 let results_type = match f.return_type.as_ref() {
-//                     crate::type_::Type::Named { public, module, name, args } => match name.as_str() {
-//                         "Int" => ValType::I64, //TODO take from symbol table? So we get custom types too?
-//                         _ => todo!()
-//                     },
-//                     crate::type_::Type::Fn { args, retrn } => todo!(),
-//                     crate::type_::Type::Var { type_ } => todo!(),
-//                     crate::type_::Type::Tuple { elems } => todo!(),
-//                 };
-//                 //TODO here copying
-//                 let mut huh: Box<[(Option<Id<'_>>, Option<NameAnnotation<'_>>, ValType<'_>)]> = Box::new([]);
-//                 let mut args_procced = Vec::from(mem::take(&mut huh));;
-//                 // let mut params = [];
-//                 // let mut arguments = Vec::from(mem::take(&mut params));
-//                 for arg in &arguments {
-//                     args_procced.push((arg.id, arg.name, arg.ty))
-//                 }
-//
-//                 let ty = TypeUse {
-//                     index: None,
-//                     inline: Some(FunctionType {
-//                         params: args_procced.into(),
-//                         results: Box::new([results_type]),
-//                     }),
-//                 };
-//
-//                 // dbg!(instructions.len());
-// //Hey hmm type field automatically filled? unclear to me how tho...
-//                 let wf = Func {
-//                     span,
-//                     id: None,
-//                     name: Some(NameAnnotation{name: "dangitawrongliteral"}), //f.name Bah I want the name but the lifetime... maybe we put the lifetime so we can own here and this func has the lifetime of the whole thind, whatever for now none
-//                     exports: InlineExport::default(),
-//                     kind: FuncKind::Inline{
-//                         locals: Box::new([]), //TODO
-//                         expression: Expression { instrs:instructions.into() } },
-//                     ty,
-//                 };
-//
-//                 module_fields.push(ModuleField::Func(wf))
-//             },
-//             crate::ast::Definition::TypeAlias(_) => todo!(),
-//             crate::ast::Definition::CustomType(_) => todo!(),
-//             crate::ast::Definition::Import(_) => todo!(),
-//             crate::ast::Definition::ModuleConstant(_) => todo!(),
-//         }
-//     }
-//
-//     let m_name = gleam_module.name;
-//     let offset = 0;
-//     let mut wasm_module = Module {
-//         span: Span::from_offset(offset),
-//         id: None,
-//         name: Some(NameAnnotation{name: &m_name}), //TODO use a parser? But find out which they use
-//         kind: ModuleKind::Text(module_fields),
-//     };
-//
-//     //TODO hmm, looks like a module has field or blobs, inside the module kind
-//     // dbg!(wasm_module.encode().unwrap());
-//     // assert!(false)
-//     let mut file = File::create("letstry.wasm").unwrap();
-//     file.write_all(&wasm_module.encode().unwrap());
-//     // Totally the wrong instructions!
-// }
+#[test]
+fn wasm_4nd() {
+    let gleam_module = trying_to_make_module(
+        "
+        pub fn add(x: Int, y: Int) -> Int {
+            internal_add(x,y)
+          }
+        fn internal_add(x: Int, y: Int) -> Int {
+            x + y
+        }
+          ",
+    );
+
+    let w = WasmThing {
+        gleam_module,
+        wasm_instructions: RefCell::new(vec![]),
+        identifiers: Default::default(),
+        known_types: known_types(), // TODO prolly need types imported and a whole thing when getting some more
+        function_names: HashMap::new(),
+    };
+    let res = w.transform().unwrap();
+    let mut file = File::create("letstry.wasm").unwrap();
+
+    let _ = file.write_all(&res);
+    // assert!(false);
+}
+
+#[test]
+fn wasm_5nd() {
+//TODO pub types!
+    let gleam_module = trying_to_make_module(
+        "
+         type Cat {
+  Cat(name: Int, cuteness: Int)
+}
+        pub fn add(x: Int, y: Int) -> Int {
+            let cat1 = Cat(name: x, cuteness: y)
+            cat1.name + cat1.cuteness
+          }",
+    );
+
+    let w = WasmThing {
+        gleam_module,
+        wasm_instructions: RefCell::new(vec![]),
+        identifiers: Default::default(),
+        known_types: known_types(), // TODO prolly need types imported and a whole thing when getting some more
+        function_names: HashMap::new(),
+    };
+    let res = w.transform().unwrap();
+    let mut file = File::create("letstry.wasm").unwrap();
+
+    let _ = file.write_all(&res);
+    // assert!(false);
+}
 
 /// A code generator that creates a .erl Erlang module and record header files
 /// for each Gleam module in the package.

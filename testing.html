@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Test wasm</title>
+
+    <script>
+        const importObject = {
+            imports: {imported_func: (arg) => console.log(arg)},
+        };
+
+        WebAssembly.instantiateStreaming(fetch("compiler-core/letstry.wasm"), importObject).then(
+            (obj) => {
+                let ans = obj.instance.exports.add(1n, 2n);
+                console.log(ans);
+                document.getElementById("answer").textContent = ans;
+            },
+        );
+    </script>
+</head>
+<body>
+
+<p> python -m http.server 8001</p>
+<p>http://0.0.0.0:8001/testing.html</p>
+
+$> 1+2 =
+<div id="answer"></div>
+</body>
+</html>
