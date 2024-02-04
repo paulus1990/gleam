@@ -93,6 +93,7 @@ struct Attributes {
     deprecated: Deprecation,
     external_erlang: Option<(EcoString, EcoString)>,
     external_javascript: Option<(EcoString, EcoString)>,
+    external_wasm: Option<(EcoString, EcoString)>,
 }
 
 impl Attributes {
@@ -1562,6 +1563,7 @@ where
             deprecation: std::mem::take(&mut attributes.deprecated),
             external_erlang: attributes.external_erlang.take(),
             external_javascript: attributes.external_javascript.take(),
+            external_wasm: attributes.external_wasm.take(),
             supported_targets: SupportedTargets::all(),
         })))
     }

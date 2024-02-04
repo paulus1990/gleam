@@ -59,17 +59,17 @@ fn trying_to_make_module(
     module
 }
 
-struct WasmThing {
-    gleam_module: crate::ast::Module<ModuleInterface, Definition<Arc<Type>, TypedExpr, EcoString, EcoString>>,
-    wasm_instructions: RefCell<Vec<ModuleField<'static>>>,
+pub(crate) struct WasmThing {
+    pub(crate) gleam_module: crate::ast::Module<ModuleInterface, Definition<Arc<Type>, TypedExpr, EcoString, EcoString>>,
+    pub(crate) wasm_instructions: RefCell<Vec<ModuleField<'static>>>,
     //AST
     //Id is pretty private :( identifiers: HashMap<&'a str, Id<'a>>, // Symbol table, but not really, wanted to use for wasm names but unnecessary byte code. Will matter if we do in Gleam  "let x=1; ds(x);"
-    identifiers: HashMap<String, usize>, //globals?
-    known_types: RefCell<HashMap<&'static str, ValType<'static>>>,
-    function_names: HashMap<&'static str,(&'static str, u32)>,
+    pub(crate) identifiers: HashMap<String, usize>, //globals?
+    pub(crate) known_types: RefCell<HashMap<&'static str, ValType<'static>>>,
+    pub(crate) function_names: HashMap<&'static str,(&'static str, u32)>,
 }
 
-fn known_types() -> RefCell<HashMap<&'static str, ValType<'static>>> {
+pub(crate) fn known_types() -> RefCell<HashMap<&'static str, ValType<'static>>> {
     let mut map = HashMap::new();
     let _ = map.insert("Int", ValType::I32);
     RefCell::new(map)
@@ -89,7 +89,7 @@ impl WasmThing {
     //     }
     // }
 
-    fn transform(mut self) -> std::result::Result<Vec<u8>, Error> {
+    pub(crate) fn transform(mut self) -> std::result::Result<Vec<u8>, Error> {
         let offset = 0; //For now we pretend each is a
                         // let name = self.gleam_module.name;
 
@@ -391,7 +391,7 @@ impl WasmThing {
                 let idx = scope
                     .get(name.as_str())
                     .expect("I expect all vars to be in the scope right now."); //TODO globals different... Need some logic here to decide the local/global get if necessary
-                return (vec![Instruction::LocalGet(Index::Num(
+                return (vec![LocalGet(Index::Num(
                     *idx as u32,
                     Span::from_offset(location.start as usize),
                 ))],vec![]);
@@ -435,7 +435,7 @@ impl WasmThing {
                 instrs.push(call);
                 return (instrs,locals)
             },
-            TypedExpr::RecordAccess{ location, typ, label, index, record }  => {
+            TypedExpr::RecordAccess{ index, record, .. }  => {
                 //TODO so uhm I'd expect stuff before..... oh but take it from the record? Because looked like there was a call to a val constructor but I don't have that at all yet...
                 //TODO what is s vs. u in get on wasm side?
                 // dbg!("whut");

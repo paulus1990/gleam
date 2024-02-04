@@ -58,11 +58,22 @@ pub enum Target {
     #[strum(serialize = "javascript", serialize = "js")]
     #[serde(rename = "javascript", alias = "js")]
     JavaScript,
+    #[strum(serialize = "webassembly", serialize = "wasm")]
+    #[serde(rename = "webassembly", alias = "wasm")]
+    Wasm,
 }
 
 impl Target {
     pub fn variant_strings() -> Vec<EcoString> {
         Self::VARIANTS.iter().map(|s| (*s).into()).collect()
+    }
+
+    /// Returns `true` if the target is [`Wasm`].
+    ///
+    /// [`Wasm`]: Target::Wasm
+    #[must_use]
+    pub fn is_wasm(&self) -> bool {
+        matches!(self, Self::Wasm)
     }
 
     /// Returns `true` if the target is [`JavaScript`].
@@ -126,6 +137,7 @@ pub enum TargetCodegenConfiguration {
     Erlang {
         app_file: Option<ErlangAppCodegenConfiguration>,
     },
+    Wasm {},
 }
 
 impl TargetCodegenConfiguration {
@@ -133,6 +145,7 @@ impl TargetCodegenConfiguration {
         match self {
             Self::JavaScript { .. } => Target::JavaScript,
             Self::Erlang { .. } => Target::Erlang,
+            Self::Wasm {} => Target::Wasm,
         }
     }
 }

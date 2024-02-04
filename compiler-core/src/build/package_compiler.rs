@@ -24,6 +24,9 @@ use askama::Template;
 use ecow::EcoString;
 use std::collections::HashSet;
 use std::{collections::HashMap, fmt::write, time::SystemTime};
+use std::cell::RefCell;
+use std::fs::File;
+use std::io::Write;
 
 use camino::{Utf8Path, Utf8PathBuf};
 
@@ -285,7 +288,8 @@ where
             ),
             TargetCodegenConfiguration::Erlang { app_file } => {
                 self.perform_erlang_codegen(modules, app_file.as_ref())
-            }
+            },
+            TargetCodegenConfiguration::Wasm {} => self.perform_wasm_codegen(modules),
         }
     }
 
@@ -357,6 +361,24 @@ where
             tracing::debug!("skipping_native_file_copying");
         }
 
+        Ok(())
+    }
+
+    fn perform_wasm_codegen(&self, modules: &[Module]) -> Result<(), Error> {
+        //TODO more than 1ste module! But this way can run something :)
+        let gleam_module = &modules[0];
+        let gleam_module = &gleam_module.ast;
+        let w = crate::codegen::WasmThing {
+            gleam_module: gleam_module.clone(),
+            wasm_instructions: RefCell::new(vec![]),
+            identifiers: Default::default(),
+            known_types: crate::codegen::known_types(),
+            function_names: im::HashMap::new(),
+        };
+        let res = w.transform().unwrap();
+        let mut file = File::create(format!("{}.wasm",self.out)).unwrap();
+
+        let _ = file.write_all(&res);
         Ok(())
     }
 

@@ -373,6 +373,7 @@ pub struct Function<T, Expr> {
     pub documentation: Option<EcoString>,
     pub external_erlang: Option<(EcoString, EcoString)>,
     pub external_javascript: Option<(EcoString, EcoString)>,
+    pub external_wasm: Option<(EcoString, EcoString)>,
     pub supported_targets: SupportedTargets,
 }
 

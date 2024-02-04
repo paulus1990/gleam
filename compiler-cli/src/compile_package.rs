@@ -34,6 +34,7 @@ pub fn command(options: CompilePackage) -> Result<()> {
                 .javascript_prelude
                 .ok_or_else(|| Error::JavaScriptPreludeRequired)?,
         },
+        Target::Wasm => TargetCodegenConfiguration::Wasm {}
     };
 
     tracing::info!("Compiling package");

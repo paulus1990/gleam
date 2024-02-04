@@ -22,6 +22,7 @@ use vec1::Vec1;
 pub struct SupportedTargets {
     erlang: bool,
     javascript: bool,
+    wasm: bool,
 }
 
 impl SupportedTargets {
@@ -29,6 +30,7 @@ impl SupportedTargets {
         SupportedTargets {
             erlang: false,
             javascript: false,
+            wasm: false,
         }
     }
 
@@ -36,6 +38,7 @@ impl SupportedTargets {
         SupportedTargets {
             erlang: true,
             javascript: true,
+            wasm: true,
         }
     }
 
@@ -43,6 +46,15 @@ impl SupportedTargets {
         SupportedTargets {
             erlang: false,
             javascript: true,
+            wasm: false,
+        }
+    }
+
+    pub fn wasm() -> SupportedTargets {
+        SupportedTargets {
+            erlang: false,
+            javascript: false,
+            wasm: true,
         }
     }
 
@@ -50,6 +62,7 @@ impl SupportedTargets {
         SupportedTargets {
             erlang: true,
             javascript: false,
+            wasm: false,
         }
     }
 
@@ -57,6 +70,7 @@ impl SupportedTargets {
         match target {
             Target::Erlang => SupportedTargets::erlang(),
             Target::JavaScript => SupportedTargets::javascript(),
+            Target::Wasm => SupportedTargets::wasm(),
         }
     }
 
@@ -64,6 +78,7 @@ impl SupportedTargets {
         SupportedTargets {
             erlang: self.erlang && targets.erlang,
             javascript: self.javascript && targets.javascript,
+            wasm: self.wasm && targets.wasm,
         }
     }
 
@@ -71,6 +86,7 @@ impl SupportedTargets {
         SupportedTargets {
             erlang: self.erlang || targets.erlang,
             javascript: self.javascript || targets.javascript,
+            wasm: self.wasm || targets.wasm,
         }
     }
 
@@ -79,11 +95,18 @@ impl SupportedTargets {
             Target::Erlang => SupportedTargets {
                 erlang: true,
                 javascript: self.javascript,
+                wasm: self.wasm,
             },
             Target::JavaScript => SupportedTargets {
                 erlang: self.erlang,
                 javascript: true,
+                wasm: self.wasm,
             },
+            Target::Wasm => SupportedTargets {
+                erlang: self.erlang,
+                javascript: self.javascript,
+                wasm: true,
+            }
         }
     }
 
@@ -91,6 +114,7 @@ impl SupportedTargets {
         match target {
             Target::Erlang => self.erlang,
             Target::JavaScript => self.javascript,
+            Target::Wasm => self.wasm,
         }
     }
 
@@ -99,12 +123,16 @@ impl SupportedTargets {
     }
 
     pub fn to_vec(self) -> Vec<Target> {
-        let SupportedTargets { erlang, javascript } = self;
-        match (erlang, javascript) {
-            (true, true) => vec![Target::Erlang, Target::JavaScript],
-            (true, _) => vec![Target::Erlang],
-            (_, true) => vec![Target::JavaScript],
-            (_, _) => vec![],
+        let SupportedTargets { erlang, javascript, wasm } = self;
+        match (erlang, javascript, wasm) {
+            (true,true,true) => vec![Target::Erlang,Target::JavaScript,Target::Wasm],
+            (true, true, _) => vec![Target::Erlang, Target::JavaScript],
+            (true, _, true) => vec![Target::Erlang,Target::Wasm],
+            (_,true,true) => vec![Target::JavaScript,Target::Wasm],
+            (true, _,_) => vec![Target::Erlang],
+            (_, true,_) => vec![Target::JavaScript],
+            (_, _,true) => vec![Target::Wasm],
+            (_, _,_) => vec![],
         }
     }
 }

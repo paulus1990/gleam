@@ -2278,6 +2278,7 @@ implementation but the function name `{function}` is not valid."
                         match current_target {
                             Target::Erlang => "Erlang",
                             Target::JavaScript => "JavaScript",
+                            Target::Wasm => "Web assembly"
                         }
                     );
                     Diagnostic {
@@ -2722,6 +2723,10 @@ but you are using v{gleam_version}.",
                         "You can not set a runtime for Erlang. Did you mean to target JavaScript?"
                             .into(),
                     ),
+                    Target::Wasm => Some(
+                        "You can not set a runtime for Wasm. Did you mean to target JavaScript?"
+                            .into(),
+                    )
                 };
 
                 Diagnostic {

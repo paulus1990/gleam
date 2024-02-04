@@ -493,6 +493,7 @@ fn register_value_from_function(
         documentation,
         external_erlang,
         external_javascript,
+        external_wasm,
         deprecation,
         end_position: _,
         body: _,
@@ -522,7 +523,7 @@ fn register_value_from_function(
     let _ = hydrators.insert(name.clone(), hydrator);
 
     let external =
-        target_function_implementation(environment.target, external_erlang, external_javascript);
+        target_function_implementation(environment.target, external_erlang, external_javascript, external_wasm);
     let (impl_module, impl_function) = implementation_names(external, module_name, name);
     let variant = ValueConstructorVariant::ModuleFn {
         documentation: documentation.clone(),
@@ -595,6 +596,7 @@ fn infer_function(
         deprecation,
         external_erlang,
         external_javascript,
+        external_wasm,
         return_type: (),
         supported_targets: _,
     } = f;
@@ -610,7 +612,7 @@ fn infer_function(
     let is_placeholder = is_placeholder(&body);
     // Find the external implementation for the current target, if one has been given.
     let external =
-        target_function_implementation(environment.target, &external_erlang, &external_javascript);
+        target_function_implementation(environment.target, &external_erlang, &external_javascript, &external_wasm);
     let (impl_module, impl_function) = implementation_names(external, module_name, &name);
 
     // The function must have at least one implementation somewhere.
@@ -689,6 +691,7 @@ fn infer_function(
         body,
         external_erlang,
         external_javascript,
+        external_wasm,
         supported_targets,
     }))
 }
@@ -724,10 +727,12 @@ fn target_function_implementation<'a>(
     target: Target,
     external_erlang: &'a Option<(EcoString, EcoString)>,
     external_javascript: &'a Option<(EcoString, EcoString)>,
+    external_wasm: &'a Option<(EcoString, EcoString)>
 ) -> &'a Option<(EcoString, EcoString)> {
     match target {
         Target::Erlang => external_erlang,
         Target::JavaScript => external_javascript,
+        Target::Wasm => external_wasm,
     }
 }
 
@@ -1136,6 +1141,7 @@ fn generalise_function(
         return_type,
         external_erlang,
         external_javascript,
+        external_wasm,
         supported_targets,
     } = function;
 
@@ -1150,7 +1156,7 @@ fn generalise_function(
 
     // Insert the function into the module's interface
     let external =
-        target_function_implementation(environment.target, &external_erlang, &external_javascript);
+        target_function_implementation(environment.target, &external_erlang, &external_javascript,&external_wasm);
     let (impl_module, impl_function) = implementation_names(external, module_name, &name);
 
     let variant = ValueConstructorVariant::ModuleFn {
@@ -1192,6 +1198,7 @@ fn generalise_function(
         body,
         external_erlang,
         external_javascript,
+        external_wasm,
         supported_targets,
     })
 }

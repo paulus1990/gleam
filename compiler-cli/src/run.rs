@@ -100,6 +100,10 @@ pub fn command(
                 run_javascript_node(&paths, &main_function.package, &module, arguments)
             }
         },
+        Target::Wasm => {
+            //TODO no runtimes yet, can put in some node thing, like watlings?
+            todo!()
+        }
     }?;
 
     std::process::exit(status);
