@@ -20,7 +20,7 @@ use crate::analyse::TargetSupport;
 use crate::ast::{ArgNames, Assignment, CallArg, Definition, Function, Pattern, Statement, TypedExpr};
 use crate::type_::{ModuleInterface, Type};
 use camino::Utf8Path;
-use wast::core::Instruction::{I64Add, I64Const, I64Sub, LocalGet, LocalSet, StructGet, StructNew};
+use wast::core::Instruction::{I32Add, I32Const, I32Sub, LocalGet, LocalSet, StructGet, StructNew};
 use wast::core::{HeapType, Local, ModuleField, ModuleKind, RefType, StorageType, StructAccess, StructField, StructType, TypeDef};
 
 fn trying_to_make_module(
@@ -71,7 +71,7 @@ struct WasmThing {
 
 fn known_types() -> RefCell<HashMap<&'static str, ValType<'static>>> {
     let mut map = HashMap::new();
-    let _ = map.insert("Int", ValType::I64);
+    let _ = map.insert("Int", ValType::I32);
     RefCell::new(map)
 }
 
@@ -189,7 +189,7 @@ impl WasmThing {
                 let span = Span::from_offset(offset);
 
                 // let result_type = ValType::Ref(RefType::r#struct()); //TODO aaaah so this is wrong!
-                // let result_type = ValType::I64;
+                // let result_type = ValType::I32;
                 // let result_type = ValType::Ref(RefType {
                 //     nullable: false,
                 //     heap: HeapType::Struct,
@@ -398,7 +398,7 @@ impl WasmThing {
             },
             TypedExpr::Int{  value, .. } => {
                 //TODO type?
-               return (vec![I64Const(value.parse().unwrap())],vec![]);
+               return (vec![I32Const(value.parse().unwrap())],vec![]);
             },
             TypedExpr::Call { location, fun, args, .. } => {
                 let mut instrs = Vec::with_capacity(args.len() + 1);
@@ -476,8 +476,8 @@ impl WasmThing {
 
     fn transform_gleam_bin_op(&self, name: &BinOp) -> Instruction<'static> {
         match name {
-            BinOp::AddInt => I64Add,
-            BinOp::SubInt => I64Sub,
+            BinOp::AddInt => I32Add,
+            BinOp::SubInt => I32Sub,
             _ => todo!(),
         }
     }

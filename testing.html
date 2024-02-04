@@ -11,7 +11,7 @@
 
         WebAssembly.instantiateStreaming(fetch("compiler-core/letstry.wasm"), importObject).then(
             (obj) => {
-                let ans = obj.instance.exports.add(1n, 2n);
+                let ans = obj.instance.exports.add(1, 2);
                 console.log(ans);
                 document.getElementById("answer").textContent = ans;
             },
@@ -20,7 +20,7 @@
 </head>
 <body>
 
-<p> python -m http.server 8001</p>
+<p>python -m http.server 8001</p>
 <p>http://0.0.0.0:8001/testing.html</p>
 
 $> 1+2 =
