@@ -20,7 +20,7 @@ use crate::analyse::TargetSupport;
 use crate::ast::{ArgNames, Assignment, CallArg, Definition, Function, Pattern, Statement, TypedExpr};
 use crate::type_::{ModuleInterface, Type};
 use camino::Utf8Path;
-use wast::core::Instruction::{I64Add, I64Const, LocalGet, LocalSet, StructGet, StructNew};
+use wast::core::Instruction::{I64Add, I64Const, I64Sub, LocalGet, LocalSet, StructGet, StructNew};
 use wast::core::{HeapType, Local, ModuleField, ModuleKind, RefType, StorageType, StructAccess, StructField, StructType, TypeDef};
 
 fn trying_to_make_module(
@@ -445,7 +445,19 @@ impl WasmThing {
                 // dbg!(&typ.named_type_name().unwrap()); //Dangit this is module, int tuple.
 
                 //todo put struct on stack?
-                let local_get = LocalGet(Index::Num(2,Span::from_offset(0))); //TODO dang I know it's the third with my example but how to generalize?
+                // Ok this is the real problem now, need the ref on the stack before access, duh but do we have that info?
+
+                let record_name = match record.as_ref() {
+                    TypedExpr::Var{ name, .. } => {
+                        name
+                    },
+                    _ => {todo!()}
+                };
+
+                let r_idx = *scope.get(record_name.as_str()).unwrap() as u32;
+                let local_get = LocalGet(Index::Num(r_idx,Span::from_offset(0))); //TODO dang I know it's the third with my example but how to generalize?
+                //I do have the scope.. Do I have the var name? cat1 in example
+                // dbg!(&location, &typ, &label, &index, &record);
 
 
                 let struct_idx = self.function_names.get(record.type_().named_type_name().unwrap().1.as_str()).unwrap().1;
@@ -465,6 +477,7 @@ impl WasmThing {
     fn transform_gleam_bin_op(&self, name: &BinOp) -> Instruction<'static> {
         match name {
             BinOp::AddInt => I64Add,
+            BinOp::SubInt => I64Sub,
             _ => todo!(),
         }
     }
@@ -570,7 +583,7 @@ fn wasm_5nd() {
 }
         pub fn add(x: Int, y: Int) -> Int {
             let cat1 = Cat(name: x, cuteness: y)
-            cat1.name + cat1.cuteness
+            cat1.cuteness + cat1.name
           }",
     );
 
@@ -585,10 +598,51 @@ fn wasm_5nd() {
     // now error (Chrome) is: Compiling function #1 failed: struct.get[0] expected type (ref null 0), found local.get of type structref @+68
 //Ok sure firefox supports it too
 
+    // wasm2wat still thinks it's wrong even with --enable-all: 0000017: error: expected valid result type (got -0x1c)
 
     // dbg!(&gleam_module);
     // assert!(false);
     //TODO what the cat type looks like is in module.types
+
+    let w = WasmThing {
+        gleam_module,
+        wasm_instructions: RefCell::new(vec![]),
+        identifiers: Default::default(),
+        known_types: known_types(), // TODO prolly need types imported and a whole thing when getting some more
+        function_names: HashMap::new(),
+    };
+    let res = w.transform().unwrap();
+    let mut file = File::create("letstry.wasm").unwrap();
+
+    let _ = file.write_all(&res);
+    // assert!(false);
+}
+
+#[test]
+fn wasm_6nd() {
+//TODO pub types!
+    let gleam_module = trying_to_make_module(
+        "
+         type Cat {
+  Cat(name: Int, cuteness: Int)
+}
+
+type Kitten {Kitten(name: Int, age: Int, cuteness: Int) }
+
+        fn add_cat(cat: Cat) -> Int {
+    cat.cuteness + cat.name
+}
+
+    fn grow(kitten: Kitten) -> Cat {
+    Cat(name: kitten.name, cuteness: kitten.cuteness-1)
+}
+
+        pub fn add(x: Int, y: Int) -> Int {
+            let kitten = Kitten(name: x, cuteness: y, age: 12)
+            let cat = grow(kitten)
+            add_cat(cat)
+          }",
+    );
 
     let w = WasmThing {
         gleam_module,
