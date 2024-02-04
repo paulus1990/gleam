@@ -1,0 +1,103 @@
+ 00 61 73 6d  # \0asm 4 byte magic number
+ 01 00 00 00 # wasm version: 1 little endian
+
+ 01 31 # type section '01' size: 49 bytes, (https://ifcoltransg.github.io/lebanon/)
+    07 # vec len 7
+        5f # struct type, index 0, The Cat
+            02 # two fields
+                7f 00 #i32
+                7f 00 #i32
+        5f # struct type index 1, the Kitten
+            03 # 3 fields
+                7f 00 #i32
+                7f 00 #i32
+                7f 00 #i32
+        60 # Func type index 2, Cat constructor
+            02 # params
+                7f # i32
+                7f # i32
+            01 # return
+                64 00 # ref 0 , to index 0 of types. So this is a concrete heap type and not a structref, because that's an abstract heap type
+        60 # Func type index 3, Kitten constructor
+            03 # 3 params
+                7f 7f 7f # 3 i32s
+            01 # return 1
+                64 01 # Ref to idx 1: Kitten I hope
+        60 # Func add_cat index 4
+            01
+                64 00 # Cat ref
+            01
+                7f
+        60 # Func grow index 5, take kitten return cat
+            01
+                64 01
+            01
+                64 00
+        60 Func add index 6, wille be exported
+            02
+                7f 7f
+            01
+                7f
+
+ 03 06 # Function section, 6 bytes... I don't get LEB128... Vector of type indices, vec is u32 len then item
+    05 # vec len 5, 2 constructors & 3 functions
+        02 03 04 05 06 # idx 6 add
+
+ 07 07   # Export section, size 7
+    01 # Vec len 1
+        03 # name is len 3
+        61 64 64 # ascii "add"
+        00 # function
+        04 # from index 4, in the function array!
+
+ 0a 58 # Code section, size 88, well 87 bytes do follow..., does the 05 go there?
+    05 # 5 entries in this code vec
+        09 # length 9 Cat constructor
+            00 # unreachable? Part of size? -> OnLocalDeclCount(0) says wat2wasm Ah yeah, see below or https://webassembly.github.io/gc/core/_download/WebAssembly.pdf p.22
+                20 00 # local.get 0
+                20 01 # local.get 1
+                fb 00 00 # Struct.new (fb 00) with typidx 0 (00)
+            0b # end
+        0b # length 11 Kitten constructor
+            00
+                20 00
+                20 01
+                20 02
+                fb 00 01
+            0b
+        0f # length 15
+            00
+                20 00
+                fb 02 00 01 # struct.get (fb 02), struct 0, fieldidx 1
+                20 00
+                fb 02 00 00
+                6a # i32.add
+            0b
+        13 # length 19
+            00
+                20 00
+                fb 02 01 00
+                20 00
+                fb 02 01 02
+                41 01 # i32.const val 1
+                6b # i32.sub
+                10 00 # call funcidx 0
+            0b # end
+        1c # length 28
+            02 # block start localdecl count? " Functions may also declare mutable local variables that are usable
+                                               as virtual registers." says the spec Ah so local counts :)
+                01 # var type
+                64 01  #ref kitten
+                01 # var type
+                64 00 # ref cat
+                20 00 # local.set 0
+                41 0c # i32.const 12
+                20 01 # local.set 1
+                10 01 # call constructor
+                21 02 # local.set 2
+                20 02 # local.get 2
+                10 03 # call grow
+                21 03 #local.set 3
+                20 03 # local.get 3
+                10 02 # call add_cat
+            0b # block end

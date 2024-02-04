@@ -188,7 +188,7 @@ impl WasmThing {
                 let offset = gleam_custom_type.location.start as usize;
                 let span = Span::from_offset(offset);
 
-                // let result_type = ValType::Ref(RefType::r#struct()); //TODO aaaah so this is wrong!
+                // let result_type = ValType::Ref(RefType::r#struct()); //TODO aaaah so this is wrong! If we know the concrete thing, else could do structref, which is abstract
                 // let result_type = ValType::I32;
                 // let result_type = ValType::Ref(RefType {
                 //     nullable: false,
@@ -599,6 +599,20 @@ fn wasm_5nd() {
 //Ok sure firefox supports it too
 
     // wasm2wat still thinks it's wrong even with --enable-all: 0000017: error: expected valid result type (got -0x1c)
+    // And the problem is the "0x64 0x00" return type of the constructor... parsed as -0x1c, checked by changing that 0x64 byte, will change te -0x1c error msg, wild!
+    // ex: change to 0x63 will say: "000001f: error: expected valid result type (got -0x1d)"
+    // browsers still parse em...
+    // And spec says it's allowed in return type?
+    // check issues: maybe https://github.com/WebAssembly/wabt/issues/2364 (see also: https://github.com/WebAssembly/wabt/pull/2363)? Lol is ref encoded as 0x6b instead of 0x64, that's be nice haha
+    // or https://github.com/WebAssembly/wabt/issues/2333 weird! Has the enable flag but no support?
+    // also --enable-gc does allow it to process the 0x5f struct type flag..
+    // prolly problem here: https://github.com/WebAssembly/wabt/blob/main/include/wabt/type.h#L47 Oh wel..
+    // Eh no compiled locally with line 47 changed the problem is bigger. Also if I change to 6b in file won't fix with original.
+    // Aaah enable more features: /home/harm/git/wabt/build/wasm2wat --enable-all -v /home/harm/git/gleam/compiler-core/letstry.wasm
+    // new error: 0000056: error: unexpected opcode: 0xfb
+    // Ah crap that's struct.new, well if it's not supported it really is not supported....
+
+    //TODO so the concrete types are fine now, but would like abstract struct when returning an enum variant, then you'd need structref (well non-nullable right, I mean...)
 
     // dbg!(&gleam_module);
     // assert!(false);
