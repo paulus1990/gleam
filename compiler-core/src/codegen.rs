@@ -20,8 +20,8 @@ use crate::analyse::TargetSupport;
 use crate::ast::{ArgNames, Assignment, CallArg, Definition, Function, Pattern, Statement, TypedExpr};
 use crate::type_::{ModuleInterface, Type};
 use camino::Utf8Path;
-use wast::core::Instruction::{I64Add, I64Const, LocalSet, StructGet};
-use wast::core::{Local, ModuleField, ModuleKind, RefType, StructAccess};
+use wast::core::Instruction::{I64Add, I64Const, LocalGet, LocalSet, StructGet, StructNew};
+use wast::core::{HeapType, Local, ModuleField, ModuleKind, RefType, StorageType, StructAccess, StructField, StructType, TypeDef};
 
 fn trying_to_make_module(
     program: &str,
@@ -112,7 +112,39 @@ impl WasmThing {
                 let name = Box::new(name);
                 let name = Box::leak(name);
                 let _ = self.function_names.insert(name, (name, funcidx));
-                funcidx = funcidx + 1; //TODO check if same index!
+                // let _ = self.known_types.borrow_mut().insert(name,ValType::Ref(RefType {
+                //     nullable: false,
+                //     heap: HeapType::Struct,
+                // })); //TODO move up? Also nullable but we know its' not... But maybe later
+
+                let _ = self.known_types.borrow_mut().insert(name, ValType::Ref(RefType {
+                    nullable: false,
+                    heap: HeapType::Concrete(Index::Num(funcidx,Span::from_offset(0))),
+                }));
+
+                funcidx = funcidx + 1; //TODO check if same index! Not really but Value constr to be added here? As a func that returns a ref...
+                let mut fields = Vec::new();
+
+                for arg in &gleam_custom_type.constructors[0].arguments { //TODO just the first again :(
+                    fields.push(StructField {
+                        id: None,
+                        mutable: false,
+                        ty: StorageType::Val(
+                            self.transform_gleam_type(arg.type_.as_ref()) //TODO this order will be wrong if we take as argument another type defined later
+                        ),
+                    })
+                }
+
+                self.wasm_instructions.borrow_mut().push(ModuleField::Type(wast::core::Type {
+                    span: Span::from_offset(gleam_custom_type.location.start as usize),
+                    id:  None,
+                    name: None,
+                    def: TypeDef::Struct(StructType {
+                        fields,
+                    }),
+                    parent: None,
+                    final_type: None,
+                }))
             }
         }
 
@@ -139,9 +171,91 @@ impl WasmThing {
                 self.add_gleam_function_to_wasm_instructions(gleam_function);
             }
             Definition::CustomType(gleam_custom_type) => {
+                //TODO extract to method
                 //TODO, add to types but how in the AST we have?
-                let name  = self.function_names.get(gleam_custom_type.name.as_str()).unwrap().0;
-                let _ = self.known_types.borrow_mut().insert(name,ValType::Ref(RefType::r#struct()));
+
+                // dbg!(gleam_custom_type);
+                // Has constructors field, so add them? TODO dependencies when structs contain structs...
+                // Think JVM problems primitives vs. objects, will we get the same problems semantics here?
+                // So a constructor would be a function that takes args and returns a structref?
+                // let constr = &gleam_custom_type.constructors[0]; //TODO so just one now, but enums! Maybe with tag based on (constructor/variant)name? To match on?
+                //Whether ref or not is transparant in Gleam code? No programmer control there...
+                // Has name and argument fields..
+
+                //TODO transform to Gleamfunction and use that code?
+                let (_,idx) = self.function_names.get(gleam_custom_type.name.as_str()).unwrap();
+
+                let offset = gleam_custom_type.location.start as usize;
+                let span = Span::from_offset(offset);
+
+                // let result_type = ValType::Ref(RefType::r#struct()); //TODO aaaah so this is wrong!
+                // let result_type = ValType::I64;
+                // let result_type = ValType::Ref(RefType {
+                //     nullable: false,
+                //     heap: HeapType::Struct,
+                // });
+
+                let result_type = ValType::Ref(RefType {
+                    nullable: false,
+                    heap: HeapType::Concrete(Index::Num(*idx,Span::from_offset(0))),
+                });
+
+                let mut params: Box<[(Option<Id<'static>>, Option<NameAnnotation<'static>>, ValType<'static>)]> =
+                    Box::new([]);
+                let mut arguments = Vec::from(mem::take(&mut params));
+                let mut locals_box: Box<[Local<'static>]> = Box::new([]);
+                let mut locals = Vec::from(mem::take(&mut locals_box)); //TODO why not just the vec?
+                let mut instrs: Box<[Instruction<'static>]> = Box::new([]);
+                let mut instructions = Vec::from(mem::take(&mut instrs));
+                for (i,param) in gleam_custom_type.constructors[0].arguments.iter().enumerate() { //TODO just 1 :(
+                    // Put args on stack then, use with stuct new?
+                    instructions.push(LocalGet(Index::Num(i as u32,Span::from_offset(0)))); //TODO span
+                    let type_ = self.transform_gleam_type(param.type_.as_ref());
+                    arguments.push((None, None, type_));
+                }
+
+                let creation = StructNew(Index::Num(*idx,Span::from_offset(0))); //TODO span
+                instructions.push(creation);
+
+                // instructions.push(LocalGet(Index::Num(0,Span::from_offset(0)))); //TODO remove but hoped struct.new would get me the struct ref :P And ehm so the docs seem to suggest it does push that to the stack p.120: https://webassembly.github.io/gc/core/_download/WebAssembly.pdf
+
+
+                let ty = TypeUse {
+                    index: None,
+                    inline: Some(FunctionType {
+                        params: arguments.into(),
+                        results: Box::new([result_type]),
+                    }),
+                };
+
+                let export: InlineExport<'_> = if gleam_custom_type.public {
+                    // We can have a parser? Inline::parse(MyParser<'a>) That has a &'a to a ParseBuf<'a> which has a from str... beh but takes its lifetime
+                    InlineExport {
+                        names: vec![self.function_names.get(gleam_custom_type.name.as_str()).unwrap().0] //TODO borrow doesn't live long enough... Can't borrow function for 'a since in a for loop... Like the underlying thing lives long enough Or can I supply a &'a something here?
+                    }
+                }
+                else {
+                    InlineExport::default()
+                };
+
+                let wasm_func = Func {
+                    span,
+                    id: None,
+                    name: None, //Some(NameAnnotation { name: &gleam_function.name }),
+                    exports: export,
+                    kind: FuncKind::Inline {
+                        locals: locals.into(), //TODO maybe get from scope, it'd bet the slice of it that's bigger than the arguments length...
+                        expression: Expression {
+                            instrs: instructions.into(),
+                        },
+                    },
+                    ty,
+                };
+                self.wasm_instructions
+                    .borrow_mut()
+                    .push(ModuleField::Func(wasm_func));
+
+
             },
             _ => todo!()
         }
@@ -329,6 +443,11 @@ impl WasmThing {
                 // dbg!(record.type_().named_type_name().unwrap().1);
                 // dbg!(label); // "name"
                 // dbg!(&typ.named_type_name().unwrap()); //Dangit this is module, int tuple.
+
+                //todo put struct on stack?
+                let local_get = LocalGet(Index::Num(2,Span::from_offset(0))); //TODO dang I know it's the third with my example but how to generalize?
+
+
                 let struct_idx = self.function_names.get(record.type_().named_type_name().unwrap().1.as_str()).unwrap().1;
                 // let struct_idx = 12;
                 let struct_get = StructGet(StructAccess{
@@ -336,7 +455,7 @@ impl WasmThing {
                     field: Index::Num(*index as u32, Span::from_offset(0)), //TODO offset!
                 });
                 // todo!()
-                return (vec![struct_get],vec![]);
+                return (vec![local_get,struct_get],vec![]);
             },
             x => {dbg!(x);todo!()},
         }
@@ -455,8 +574,17 @@ fn wasm_5nd() {
           }",
     );
 
-    //TODO Uncaught (in promise) CompileError: wasm validation error: at offset 43: type mismatch: expression has type i64 but expected structref
+
+    //TODO: Uncaught (in promise) CompileError: wasm validation error: at offset 43: type mismatch: expression has type i64 but expected structref
     // but we do get bytes.... not promising! Since encode doesn't catch it....
+    // Ok new error: CompileError: wasm validation error: at offset 46: not a struct type
+    // Yeah cause function does it's own magic (on wasm tools side) to add to the types at top of module, but struct not so much...
+    // Ok now: CompileError: wasm validation error: at offset 68: popping value from empty stack
+    // Lol was using firefox, maybe no GC? Chrome has better errors: WebAssembly.instantiateStreaming(): Compiling function #1 failed: not enough arguments on the stack for struct.get (need 1, got 0) @+68
+// Can also do: wasm2wat -v --enable-gc compiler-core/letstry.wasm
+    // now error (Chrome) is: Compiling function #1 failed: struct.get[0] expected type (ref null 0), found local.get of type structref @+68
+//Ok sure firefox supports it too
+
 
     // dbg!(&gleam_module);
     // assert!(false);
