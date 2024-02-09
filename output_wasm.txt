@@ -90,9 +90,9 @@
                 64 01  #ref kitten
                 01 # var type
                 64 00 # ref cat
-                20 00 # local.set 0
+                20 00 # local.get 0
                 41 0c # i32.const 12
-                20 01 # local.set 1
+                20 01 # local.get 1
                 10 01 # call constructor
                 21 02 # local.set 2
                 20 02 # local.get 2
