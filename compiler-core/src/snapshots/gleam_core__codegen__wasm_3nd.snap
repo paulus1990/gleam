@@ -1,0 +1,19 @@
+---
+source: compiler-core/src/codegen.rs
+expression: wat
+---
+(module
+(func $add (export "add") (param $x i32) (param $y i32) (result i32)
+    (local $z i32)
+    (local $a i32)
+    (i32.const 10)
+    (local.set $z)
+    (i32.const 100)
+    (local.set $a)
+    (local.get $x)
+    (local.get $y)
+    (i32.add)
+    (local.get $z)
+    (i32.add)
+    (local.get $a)
+    (i32.add)))

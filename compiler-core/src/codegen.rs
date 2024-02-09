@@ -19,34 +19,50 @@ use crate::analyse::TargetSupport;
 use crate::ast::{ArgNames, Assignment, CallArg, Definition, Function, Pattern, Statement, TypedExpr};
 use crate::type_::{ModuleInterface, Type};
 use camino::Utf8Path;
+use wasabi_leb128::WriteLeb128;
 use crate::codegen::WasmInstruction::{Call, I32Add, I32Const, I32Sub, LocalGet, LocalSet};
 use crate::codegen::WasmType::{I32, ConcreteRef};
 use crate::codegen::WasmTypeSectionEntry::PlaceHolder;
 
 fn encode_unsigned_leb128(x: u32) -> Vec<u8> {
-    if x == 0
-    {
-        vec![0]
-    } else {
-        x.to_le_bytes().into_iter().take_while(|x| *x != 0).collect()
-    }
+    //TODO maybe wrong :P
+    let mut buf = Vec::new();
+    let _ = buf.write_leb128(x).unwrap();
+    buf
+    // if x == 0
+    // {
+    //     vec![0]
+    // } else {
+    //     x.to_le_bytes().into_iter().take_while(|x| *x != 0).collect()
+    // }
+    // let mut things = x.to_le_bytes().to_vec();
+    // let huh = things.len() % 7;
+    // let mut y = vec![0,huh];
+    // y.append(&mut things);
+    // y.into_iter().chunks(7).into_iter().enumerate().map();
+    //
+    // todo!()
 }
 
 fn encode_signed_leb128(mut x: i32) -> Vec<u8> {
-    let mut result = 0;
-    let mut shift = 0;
-    let mut input = x.to_le_bytes().to_vec();
-    loop {
-        let byte = input.pop().unwrap_or(0);
-        result |= (byte & 0x7f) << shift;
-        shift += 7;
-        if (0x80 & byte) == 0 {
-            if shift < 32 && (byte & 0x40) != 0 {
-                return (result | (u8::MAX << shift)).to_le_bytes().to_vec(); //~0 = ~0 then https://en.wikipedia.org/wiki/LEB128
-            }
-            return result.to_le_bytes().to_vec();
-        }
-    }
+    let mut buf = Vec::new();
+    let _ = buf.write_leb128(x).unwrap();
+    buf
+    //TODO wrong for sure
+    // let mut result = 0;
+    // let mut shift = 0;
+    // let mut input = x.to_be_bytes().to_vec();
+    // loop {
+    //     let byte = input.pop().unwrap_or(0);
+    //     result |= (byte & 0x7f) << shift;
+    //     shift += 7;
+    //     if (0x80 & byte) == 0 {
+    //         if shift < 32 && (byte & 0x40) != 0 {
+    //             return (result | (u8::MAX << shift)).to_le_bytes().to_vec(); //~0 = ~0 then https://en.wikipedia.org/wiki/LEB128
+    //         }
+    //         return result.to_le_bytes().to_vec();
+    //     }
+    // }
 }
 
 trait Wasmable {
@@ -54,7 +70,7 @@ trait Wasmable {
     fn to_wasm(&self) -> Vec<u8>;
 }
 
-#[derive(Clone,Debug)]
+#[derive(Clone, Debug)]
 enum WasmType {
     I32,
     ConcreteRef(WasmVar),
@@ -95,7 +111,7 @@ impl Wasmable for WasmTypeSectionEntry {
     }
 }
 
-#[derive(Clone,Debug)]
+#[derive(Clone, Debug)]
 struct WasmFuncDef {
     info: WasmVar,
     params: Vec<WasmType>,
@@ -160,7 +176,7 @@ impl Wasmable for WasmType {
     }
 }
 
-#[derive(Clone, Eq, PartialEq,Debug)]
+#[derive(Clone, Eq, PartialEq, Debug)]
 struct WasmVar {
     idx: u32,
     name: EcoString,
@@ -182,7 +198,7 @@ struct WasmFunction {
     args: Vec<(WasmVar, WasmType)>,
     def: WasmFuncDef,
     body: Vec<WasmInstruction>,
-    local_count: u32
+    locals: Vec<(WasmVar, WasmType)>,
 }
 
 impl Wasmable for WasmFunction {
@@ -193,12 +209,19 @@ impl Wasmable for WasmFunction {
             acc.push_str(&format!(" (param ${} {})", x.0.name, x.1.to_wat()));
             acc
         });
+        let locals = self.locals.iter().fold(
+            EcoString::new(),
+            |mut acc, (v, type_)| {
+                acc.push_str(&mut format!("\n    (local ${} {})", v.name, type_.to_wat()));
+                acc
+            },
+        );
         let body = self.body.iter().map(|x| format!("\n    ({})", x.to_wat())).fold(EcoString::new(), |mut acc, x| {
             acc.push_str(&x);
             acc
         });
 
-        format!("(func ${}{export}{args} {ret}{body})", self.def.info.name).into()
+        format!("(func ${}{export}{args} {ret}{locals}{body})", self.def.info.name).into()
     }
 
     fn to_wasm(&self) -> Vec<u8> {
@@ -222,34 +245,57 @@ impl Wasmable for WasmInstruction {
     fn to_wat(&self) -> EcoString {
         match self {
             LocalGet(x) => { format!("local.get ${}", x.name).into() }
-            LocalSet(x) => { format!("local.get ${}", x.name).into() }
+            LocalSet(x) => { format!("local.set ${}", x.name).into() }
             Call(x) => { format!("call ${}", x.name).into() }
             WasmInstruction::Function(x) => { x.to_wat() }
             I32Add => { "i32.add".into() }
             I32Sub => { "i32.sub".into() }
-            I32Const(x) => { format!("i32.const {x}").into() },
+            I32Const(x) => { format!("i32.const {x}").into() }
         }
     }
 
     fn to_wasm(&self) -> Vec<u8> {
         match self {
-            I32Const(x) => {let mut acc = vec![0x41]; acc.append(&mut encode_signed_leb128(*x)); acc},
+            I32Const(x) => {
+                let mut acc = vec![0x41];
+                acc.append(&mut encode_signed_leb128(*x));
+                acc
+            }
             WasmInstruction::Function(f) => {
                 let mut func = Vec::new();
-                   let mut local_count =  encode_unsigned_leb128(f.local_count);
+                let mut local_count = encode_unsigned_leb128(f.locals.len() as u32);
                 let mut body: Vec<u8> = f.body.iter().flat_map(|x| x.to_wasm()).collect();
-                let mut func_size = encode_unsigned_leb128((body.len()+1+local_count.len()) as u32); //+1 for end should include local count len????
+                let mut locals: Vec<u8> = f.locals.iter().flat_map(|(_, t)| {
+                    let mut acc = vec![1]; //var type
+                    acc.append(t.to_wasm().as_mut());
+                    acc
+                }
+                ).collect();
+                let mut func_size = encode_unsigned_leb128((body.len() + 1 + local_count.len() + locals.len()) as u32); //+1 for end should include local count len????
                 func.append(&mut func_size);
                 func.append(&mut local_count);
+                func.append(&mut locals);
                 func.append(&mut body);
                 func.push(0x0b); //end function
                 func
-            },
-            LocalGet(v) => {let mut acc = vec![0x20];acc.append(&mut encode_unsigned_leb128(v.idx));acc},
-            LocalSet(v) => {let mut acc = vec![0x21];acc.append(&mut encode_unsigned_leb128(v.idx));acc},
-            Call(v) => {let mut acc = vec![0x10];acc.append(&mut encode_unsigned_leb128(v.idx));acc},
-            I32Add => {vec![0x6a]}
-            I32Sub => {vec![0x6b]}
+            }
+            LocalGet(v) => {
+                let mut acc = vec![0x20];
+                acc.append(&mut encode_unsigned_leb128(v.idx));
+                acc
+            }
+            LocalSet(v) => {
+                let mut acc = vec![0x21];
+                acc.append(&mut encode_unsigned_leb128(v.idx));
+                acc
+            }
+            Call(v) => {
+                let mut acc = vec![0x10];
+                acc.append(&mut encode_unsigned_leb128(v.idx));
+                acc
+            }
+            I32Add => { vec![0x6a] }
+            I32Sub => { vec![0x6b] }
         }
     }
 }
@@ -387,7 +433,7 @@ impl WasmThing {
                 args: arguments,
                 def: func_def,
                 body: instructions,
-                local_count: locals.len() as u32,
+                locals: locals,
             }
         );
         self.wasm_instructions
@@ -590,11 +636,11 @@ impl Wasmable for WasmThing {
                         fn_bytes.append(&mut encode_unsigned_leb128(f.info.idx));
                         fn_bytes
                     }
-                    _ => {panic!()}
+                    _ => { panic!() }
                 }
             }
         ).collect();
-        let entry_count = &mut  encode_unsigned_leb128(self.type_section.borrow().iter().filter(|x| x.public()).count() as u32);
+        let entry_count = &mut encode_unsigned_leb128(self.type_section.borrow().iter().filter(|x| x.public()).count() as u32);
         module.append(&mut encode_unsigned_leb128(section.len() as u32 + entry_count.len() as u32));
         module.append(entry_count);
         module.append(&mut section);
@@ -649,32 +695,42 @@ fn wasm_2n() {
 }
 
 
-// #[test]
-// fn wasm_3nd() {
-//     // use wast::core::{Module, ModuleKind,ModuleField};
-//
-//     let gleam_module = trying_to_make_module(
-//         "pub fn add(x: Int, y: Int) -> Int {
-//             let z = 10
-//             let a = 100
-//             x + y + z + a
-//           }",
-//     );
-//
-//     let w = WasmThing {
-//         gleam_module,
-//         wasm_instructions: RefCell::new(vec![]),
-//         identifiers: Default::default(),
-//         known_types: known_types(), // TODO prolly need types imported and a whole thing when getting some more
-//         function_names: HashMap::new(),
-//     };
-//     let res = w.transform().unwrap();
-//     let mut file = File::create("letstry.wasm").unwrap();
-//
-//     let _ = file.write_all(&res);
-//     // assert!(false);
-// }
-//
+#[test]
+fn wasm_3nd() {
+    let gleam_module = trying_to_make_module(
+        "pub fn add(x: Int, y: Int) -> Int {
+            let z = 10
+            let a = 100
+            x+ y + z + a
+          }",
+    );
+
+    let w = WasmThing {
+        gleam_module,
+        wasm_instructions: RefCell::new(vec![]),
+        type_section: RefCell::new(vec![]),
+        functions_type_section_index: RefCell::new(Default::default()),
+    };
+    w.transform();
+    let wasm = w.to_wasm();
+    let wasm_string_bytes = wasm.iter().map(|x| format!("{:#04X?}", *x)).reduce(
+        |mut acc, x| {
+            acc.push_str("\n");
+            acc.push_str(&x);
+            acc
+        }
+    ).unwrap();
+
+    let wat = w.to_wat();
+    let mut file = File::create("letstry.wat").unwrap();
+    let _ = file.write_all(wat.as_bytes());
+    insta::assert_snapshot!(wat);
+
+    let mut file = File::create("letstry.wasm").unwrap();
+    let _ = file.write_all(&wasm);
+    insta::assert_snapshot!(wasm_string_bytes);
+}
+
 // #[test]
 // fn wasm_4nd() {
 //     let gleam_module = trying_to_make_module(
