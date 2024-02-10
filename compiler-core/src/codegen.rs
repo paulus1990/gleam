@@ -108,7 +108,10 @@ impl Wasmable for WasmTypeSectionEntry {
 
     fn to_wasm(&self) -> Vec<u8> {
         match self {
-            PlaceHolder(_) => { panic!() }
+            PlaceHolder(x) => {
+                dbg!(x);
+                panic!()
+            }
             WasmTypeSectionEntry::Function(x) => { x.to_wasm() }
             WasmTypeSectionEntry::Struct(x) => { x.to_wasm() }
         }
@@ -181,7 +184,7 @@ impl Wasmable for WasmType {
                 // format!("(ref {}  (;{};))", index, x.name).into()
                 // but we don't have the full info here hmmmmmmmmmmmmmmmmmm
                 format!("(ref ${})", x.name).into()
-            },
+            }
         }
     }
 
@@ -377,7 +380,7 @@ pub(crate) struct WasmThing {
     pub(crate) gleam_module: crate::ast::Module<ModuleInterface, Definition<Arc<Type>, TypedExpr, EcoString, EcoString>>,
     pub(crate) wasm_instructions: RefCell<Vec<WasmInstruction>>,
     pub(crate) type_section: RefCell<Vec<WasmTypeSectionEntry>>,
-    pub(crate) functions_type_section_index: RefCell<HashMap<EcoString, (u32,u32)>>,
+    pub(crate) functions_type_section_index: RefCell<HashMap<EcoString, (u32, u32)>>,
     // pub(crate) wasm_instructions: RefCell<Vec<ModuleField<'static>>>,
     // //AST
     // //Id is pretty private :( identifiers: HashMap<&'a str, Id<'a>>, // Symbol table, but not really, wanted to use for wasm names but unnecessary byte code. Will matter if we do in Gleam  "let x=1; ds(x);"
@@ -429,12 +432,14 @@ impl WasmThing {
     }
 
     fn add_gleam_custom_type(&self, gleam_custom_type: &CustomType<Arc<Type>>) {
-        let name = gleam_custom_type.name.clone();
+        let mut name = gleam_custom_type.name.clone();
+        let mut struct_name = name.clone();
+        struct_name.push_str("_struct");
         let len = self.type_section.borrow().len();
         let type_section_idx: usize = self.type_section.borrow().iter().enumerate()
             .filter_map(|(i, x)| {
                 if let PlaceHolder(huhname) = x {
-                    if huhname == &name {
+                    if huhname == &struct_name {
                         return Some(i);
                     }
                 }
@@ -457,7 +462,7 @@ impl WasmThing {
             .collect();
 
         let struct_def = WasmStructDef {
-            info: WasmVar { idx: type_section_idx as u32, name: name.clone() },
+            info: WasmVar { idx: type_section_idx as u32, name: struct_name },
             fields: fields.clone(),
         };
 
@@ -465,11 +470,11 @@ impl WasmThing {
             //TODO while! Maybe? Thiink more
             self.type_section.borrow_mut().push(PlaceHolder("".into()));
         }
-
         self.type_section.borrow_mut()[type_section_idx] = WasmTypeSectionEntry::Struct(struct_def.clone());
+        dbg!(self.type_section.borrow());
 
         let mut constructor_name = name;
-        // constructor_name.push_str("_constructor"); Oh the type and constructor same name hmmmmm else we dont know we call really
+        // constructor_name.push_str("_constructor"); // Oh the type and constructor same name hmmmmm else we dont know we call really
         // TODO or push for func name but put in the hasmap differently
         let constructor_idx = type_section_idx + 1;
         let fun_len = self.functions_type_section_index.borrow().len();
@@ -516,7 +521,7 @@ impl WasmThing {
         let name = gleam_function.name.clone();
         let len = self.type_section.borrow().len();
         let fun_len = self.functions_type_section_index.borrow().len();
-        let loc: (u32,u32) = *self.functions_type_section_index.borrow_mut().get(&name).unwrap_or(&(len as u32,fun_len as u32));
+        let loc: (u32, u32) = *self.functions_type_section_index.borrow_mut().get(&name).unwrap_or(&(len as u32, fun_len as u32));
         let _ = self.functions_type_section_index.borrow_mut().insert(name.clone(), loc);
         let wasm_var = WasmVar { idx: loc.0, name };
 
@@ -544,11 +549,15 @@ impl WasmThing {
             return_type: result_type,
             exported: gleam_function.public,
         };
+
         if loc.0 >= len as u32 {
             //TODO while! Maybe? Thiink more
             self.type_section.borrow_mut().push(PlaceHolder("".into()));
         }
+        // dbg!(self.type_section.borrow());
         self.type_section.borrow_mut()[loc.0 as usize] = WasmTypeSectionEntry::Function(func_def.clone()); //TODO grow vec if necess
+        // dbg!(self.type_section.borrow());
+
         let wasm_func = WasmInstruction::Function(
             WasmFunction {
                 args: arguments,
@@ -652,20 +661,21 @@ impl WasmThing {
                     todo!()
                 };
 
-                let pi = *self.functions_type_section_index.borrow().get(fn_name.as_str()).unwrap_or(&(u32::MAX,u32::MAX));
+                let pi = *self.functions_type_section_index.borrow().get(fn_name.as_str()).unwrap_or(&(u32::MAX, u32::MAX));
                 let fn_idx = match pi {
-                    (u32::MAX,u32::MAX) => {
+                    (u32::MAX, u32::MAX) => {
                         let len = self.type_section.borrow().len();
                         let fun_len = self.functions_type_section_index.borrow().len();
                         self.type_section.borrow_mut().push(PlaceHolder("".into()));
-                        let _ = self.functions_type_section_index.borrow_mut().insert(fn_name.clone(), (len as u32,fun_len as u32));
-                        (len as u32,fun_len as u32)
+                        let _ = self.functions_type_section_index.borrow_mut().insert(fn_name.clone(), (len as u32, fun_len as u32));
+                        dbg!(self.type_section.borrow());
+                        (len as u32, fun_len as u32)
                     }
                     i => { i }
                 };
                 let call = Call(   //TODO tail call use instead? CallReturn :)
                                    WasmVar {
-                                       idx: fn_idx.0,
+                                       idx: fn_idx.1,
                                        name: fn_name.clone(),
                                    }
                 );
@@ -682,8 +692,8 @@ impl WasmThing {
                 };
                 let r_idx = *scope.get(record_name).unwrap() as u32;
                 instrs.push(LocalGet(WasmVar { idx: r_idx, name: record_name.clone() }));
-                let record_type = record.type_().named_type_name().unwrap().1; //TODO this unwrap!
-
+                let mut record_type = record.type_().named_type_name().unwrap().1; //TODO this unwrap!
+                record_type.push_str("_struct");
                 let struct_var = self.type_section.borrow().iter().enumerate().filter_map(|(i, x)|
                     {
                         match x {
@@ -713,6 +723,7 @@ impl WasmThing {
                     None => {
                         let len = self.type_section.borrow().len();
                         self.type_section.borrow_mut().push(PlaceHolder(record_type.clone()));
+                        dbg!(self.type_section.borrow());
                         WasmVar {
                             idx: len as u32,
                             name: record_type.clone(),
@@ -751,12 +762,16 @@ impl WasmThing {
             Type::Named { name, .. } =>
                 match name.as_str() {
                     "Int" => I32,
-                    x => {
+                    x  => {
+                        let mut  x = x.to_string();
+                        x.push_str("_struct");
+                        let x = &x;
+
                         let len = self.type_section.borrow().len();
                         let idx = self.type_section.borrow().iter().enumerate()
                             .filter_map(|(i, entry)| {
                                 if let WasmTypeSectionEntry::Struct(WasmStructDef { info, .. }) = entry {
-                                    if info.name == x {
+                                    if info.name == x.as_str() {
                                         return Some(i);
                                     }
                                 }
@@ -766,15 +781,18 @@ impl WasmThing {
                             .nth(0).unwrap_or(len); //TODO map so easier, maybe :P
 
                         if idx == len {
-                            self.type_section.borrow_mut().push(PlaceHolder(x.into()));
+                            self.type_section.borrow_mut().push(PlaceHolder(EcoString::from(x.clone())));
                         }
+                        dbg!(self.type_section.borrow());
+
+                        let x = EcoString::from(x.clone());
 
                         ConcreteRef(
                             WasmVar {
                                 idx: idx as u32,
-                                name: x.into(),
+                                name: x,
                             })
-                    }
+                    },
                 }
             _ => todo!() //Prolly a ref, with correct index?,
         }
@@ -819,6 +837,7 @@ impl Wasmable for WasmThing {
         let mut module = vec![0, 'a' as u8, 's' as u8, 'm' as u8, 1, 0, 0, 0];
 
         //Type section
+        dbg!("types");
         module.push(1);
         let mut section: Vec<u8> = self.type_section.borrow().iter().flat_map(
             |x| x.to_wasm()
@@ -829,6 +848,7 @@ impl Wasmable for WasmThing {
         module.append(&mut section);
 
         //Function section
+        dbg!("functions");
         module.push(3);
         let mut section: Vec<u8> = self.functions_type_section_index.borrow().iter().flat_map(
             |(_, x)| encode_unsigned_leb128(x.0)
@@ -839,6 +859,7 @@ impl Wasmable for WasmThing {
         module.append(&mut section);
 
         //Export section
+        dbg!("exports");
         module.push(7);
 
         let mut section: Vec<u8> = self.type_section.borrow().iter().filter(|x| x.public()).flat_map(
@@ -851,6 +872,25 @@ impl Wasmable for WasmThing {
                         fn_bytes.append(&mut name_bytes);
                         fn_bytes.push(0); //function
                         let idx_fn = self.functions_type_section_index.borrow().get(&f.info.name).unwrap().1; //TODO better index for functions here, this is stupid
+                        // let idx_fn = self.type_section.borrow().iter()
+                        //     .filter(|x|
+                        //         {
+                        //             match x {
+                        //                 WasmTypeSectionEntry::Function(_) => true,
+                        //                 _ => false
+                        //             }
+                        //         }
+                        //     )
+                        //     .enumerate()
+                        //     .filter_map(|(i, x)|
+                        //         {
+                        //             match x {
+                        //                 WasmTypeSectionEntry::Function(WasmFuncDef { info, .. }) if info.name == f.info.name => Some(i),
+                        //                 _ => None
+                        //             }
+                        //         }
+                        //     )
+                        //     .nth(0).unwrap() as u32; //TODO still really stupid..... And now the Hashmap with the tuples can remove 2nd u32 again, or make it correct and get it here lol
                         fn_bytes.append(&mut encode_unsigned_leb128(idx_fn));
                         fn_bytes
                     }
@@ -1024,9 +1064,11 @@ fn wasm_5nd() {
 
 
     //TODO Uncaught (in promise) CompileError: wasm validation error: at offset 68: type mismatch: expression has type i32 but expected (ref 0) weird with which is exported I think... left off here
+    //Problem here is in the call it calls 10 01 where it should call 10 00, 1st func in the func section (type idx 01 but func idx 00)
     let mut file = File::create("letstry.wasm").unwrap();
     let _ = file.write_all(&wasm);
     insta::assert_snapshot!(wasm_string_bytes);
+
 //
 //
 //     //TODO: Uncaught (in promise) CompileError: wasm validation error: at offset 43: type mismatch: expression has type i64 but expected structref
