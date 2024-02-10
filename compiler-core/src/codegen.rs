@@ -16,13 +16,17 @@ use std::cell::RefCell;
 use std::{fmt::Debug, fs::File, io::Write, sync::Arc};
 
 use crate::analyse::TargetSupport;
-use crate::ast::{ArgNames, Assignment, CallArg, Definition, Function, Pattern, Statement, TypedExpr};
+use crate::ast::{ArgNames, Assignment, CallArg, CustomType, Definition, Function, Pattern, Statement, TypedExpr};
 use crate::type_::{ModuleInterface, Type};
 use camino::Utf8Path;
 use wasabi_leb128::WriteLeb128;
-use crate::codegen::WasmInstruction::{Call, I32Add, I32Const, I32Sub, LocalGet, LocalSet};
+use crate::codegen::WasmInstruction::{Call, I32Add, I32Const, I32Sub, LocalGet, LocalSet, StructGet, StructNew};
 use crate::codegen::WasmType::{I32, ConcreteRef};
 use crate::codegen::WasmTypeSectionEntry::PlaceHolder;
+
+
+//TODO non-ascii names and upper-case var names.
+//TODO i32 widening? Check Gleam expectations.
 
 fn encode_unsigned_leb128(x: u32) -> Vec<u8> {
     //TODO maybe wrong :P
@@ -44,7 +48,7 @@ fn encode_unsigned_leb128(x: u32) -> Vec<u8> {
     // todo!()
 }
 
-fn encode_signed_leb128(mut x: i32) -> Vec<u8> {
+fn encode_signed_leb128(x: i32) -> Vec<u8> {
     let mut buf = Vec::new();
     let _ = buf.write_leb128(x).unwrap();
     buf
@@ -79,7 +83,7 @@ enum WasmType {
 
 #[derive(Debug)]
 enum WasmTypeSectionEntry {
-    PlaceHolder,
+    PlaceHolder(EcoString),
     Function(WasmFuncDef),
     Struct(WasmStructDef),
 }
@@ -96,7 +100,7 @@ impl WasmTypeSectionEntry {
 impl Wasmable for WasmTypeSectionEntry {
     fn to_wat(&self) -> EcoString {
         match self {
-            PlaceHolder => { panic!() }
+            PlaceHolder(_) => { panic!() }
             WasmTypeSectionEntry::Function(x) => { x.to_wat() }
             WasmTypeSectionEntry::Struct(x) => { x.to_wat() }
         }
@@ -104,7 +108,7 @@ impl Wasmable for WasmTypeSectionEntry {
 
     fn to_wasm(&self) -> Vec<u8> {
         match self {
-            PlaceHolder => { panic!() }
+            PlaceHolder(_) => { panic!() }
             WasmTypeSectionEntry::Function(x) => { x.to_wasm() }
             WasmTypeSectionEntry::Struct(x) => { x.to_wasm() }
         }
@@ -140,19 +144,31 @@ impl Wasmable for WasmFuncDef {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)] //TODO not sure needs clone but eh...
 struct WasmStructDef {
     info: WasmVar,
-    fields: Vec<WasmType>,
+    fields: Vec<(WasmVar, WasmType)>,
 }
 
 impl Wasmable for WasmStructDef {
     fn to_wat(&self) -> EcoString {
-        todo!()
+        let mut acc = format!("(type ${} (struct", self.info.name);
+        self.fields.iter().for_each(|f|
+            acc.push_str(&mut format!(" (field ${} {})", f.0.name, f.1.to_wat()))
+        );
+        acc.push_str("))"); //TODO move somewhere else the \n?
+        acc.into()
     }
 
     fn to_wasm(&self) -> Vec<u8> {
-        todo!()
+        let mut acc = vec![0x5f];
+        acc.append(&mut encode_unsigned_leb128(self.fields.len() as u32));
+        self.fields.iter().for_each(
+            |(_, t)| {
+                acc.append(&mut t.to_wasm());
+                acc.push(0); //immutable
+            });
+        acc
     }
 }
 
@@ -160,7 +176,12 @@ impl Wasmable for WasmType {
     fn to_wat(&self) -> EcoString {
         match self {
             I32 => "i32".into(),
-            ConcreteRef(x) => format!("ref {} ;; {}", x.idx, x.name).into(),
+            ConcreteRef(x) => {
+                //TODO the ref idx, doesn't work for wat, since functions are gone.....
+                // format!("(ref {}  (;{};))", index, x.name).into()
+                // but we don't have the full info here hmmmmmmmmmmmmmmmmmm
+                format!("(ref ${})", x.name).into()
+            },
         }
     }
 
@@ -178,6 +199,7 @@ impl Wasmable for WasmType {
 
 #[derive(Clone, Eq, PartialEq, Debug)]
 struct WasmVar {
+    //TODO rename to WasmIndex?
     idx: u32,
     name: EcoString,
 }
@@ -239,6 +261,8 @@ enum WasmInstruction {
     I32Add,
     I32Sub,
     I32Const(i32),
+    StructNew(WasmVar),
+    StructGet(WasmVar, WasmVar), //Type Field
 }
 
 impl Wasmable for WasmInstruction {
@@ -251,6 +275,8 @@ impl Wasmable for WasmInstruction {
             I32Add => { "i32.add".into() }
             I32Sub => { "i32.sub".into() }
             I32Const(x) => { format!("i32.const {x}").into() }
+            StructNew(x) => { format!("struct.new ${}", x.name).into() }
+            StructGet(struc, field) => { format!("struct.get ${} ${}", struc.name, field.name).into() }
         }
     }
 
@@ -296,10 +322,20 @@ impl Wasmable for WasmInstruction {
             }
             I32Add => { vec![0x6a] }
             I32Sub => { vec![0x6b] }
+            StructNew(v) => {
+                let mut acc = vec![0xfb, 0x00];
+                acc.append(&mut encode_unsigned_leb128(v.idx));
+                acc
+            }
+            StructGet(struc, field) => {
+                let mut acc = vec![0xfb, 0x02];
+                acc.append(&mut encode_unsigned_leb128(struc.idx));
+                acc.append(&mut encode_unsigned_leb128(field.idx));
+                acc
+            }
         }
     }
 }
-
 
 fn trying_to_make_module(
     program: &str,
@@ -341,7 +377,7 @@ pub(crate) struct WasmThing {
     pub(crate) gleam_module: crate::ast::Module<ModuleInterface, Definition<Arc<Type>, TypedExpr, EcoString, EcoString>>,
     pub(crate) wasm_instructions: RefCell<Vec<WasmInstruction>>,
     pub(crate) type_section: RefCell<Vec<WasmTypeSectionEntry>>,
-    pub(crate) functions_type_section_index: RefCell<HashMap<EcoString, u32>>,
+    pub(crate) functions_type_section_index: RefCell<HashMap<EcoString, (u32,u32)>>,
     // pub(crate) wasm_instructions: RefCell<Vec<ModuleField<'static>>>,
     // //AST
     // //Id is pretty private :( identifiers: HashMap<&'a str, Id<'a>>, // Symbol table, but not really, wanted to use for wasm names but unnecessary byte code. Will matter if we do in Gleam  "let x=1; ds(x);"
@@ -385,8 +421,92 @@ impl WasmThing {
             Definition::Function(gleam_function) => {
                 self.add_gleam_function_to_wasm_instructions(gleam_function);
             }
+            Definition::CustomType(gleam_custom_type) => {
+                self.add_gleam_custom_type(gleam_custom_type);
+            }
             _ => todo!()
         }
+    }
+
+    fn add_gleam_custom_type(&self, gleam_custom_type: &CustomType<Arc<Type>>) {
+        let name = gleam_custom_type.name.clone();
+        let len = self.type_section.borrow().len();
+        let type_section_idx: usize = self.type_section.borrow().iter().enumerate()
+            .filter_map(|(i, x)| {
+                if let PlaceHolder(huhname) = x {
+                    if huhname == &name {
+                        return Some(i);
+                    }
+                }
+                return None;
+            }
+            )
+            .nth(0)
+            .unwrap_or(len)
+            ;
+
+        let fields: Vec<_> = gleam_custom_type.constructors[0].arguments //TODO supports only one constructor :(
+            .iter()
+            .enumerate()
+            .map(|(i, arg)|
+                {
+                    let name = arg.label.clone().unwrap_or(format!("{i}").into());
+                    (WasmVar { idx: i as u32, name }, self.transform_gleam_type(arg.type_.as_ref()))
+                }
+            )
+            .collect();
+
+        let struct_def = WasmStructDef {
+            info: WasmVar { idx: type_section_idx as u32, name: name.clone() },
+            fields: fields.clone(),
+        };
+
+        if type_section_idx >= len {
+            //TODO while! Maybe? Thiink more
+            self.type_section.borrow_mut().push(PlaceHolder("".into()));
+        }
+
+        self.type_section.borrow_mut()[type_section_idx] = WasmTypeSectionEntry::Struct(struct_def.clone());
+
+        let mut constructor_name = name;
+        // constructor_name.push_str("_constructor"); Oh the type and constructor same name hmmmmm else we dont know we call really
+        // TODO or push for func name but put in the hasmap differently
+        let constructor_idx = type_section_idx + 1;
+        let fun_len = self.functions_type_section_index.borrow().len();
+        let _ = self.functions_type_section_index.borrow_mut().insert(constructor_name.clone(), (constructor_idx as u32, fun_len as u32)); //TODO get or insert? Maybe used already? Then need place holder in two places :P
+
+        let var = WasmVar {
+            idx: constructor_idx as u32,
+            name: constructor_name,
+        };
+
+        let constructor_def = WasmFuncDef {
+            info: var.clone(),
+            params: fields.iter().map(|x| x.1.clone()).collect(),
+            return_type: ConcreteRef(struct_def.info.clone()),
+            exported: false, //TODO pub structs?
+        };
+
+        self.type_section.borrow_mut().push(WasmTypeSectionEntry::Function(constructor_def.clone()));
+
+        let mut instructions = Vec::new();
+        for (v, _) in fields.iter() {
+            instructions.push(LocalGet(v.clone()));
+        }
+        instructions.push(StructNew(struct_def.info));
+
+        let wasm_constructor_instruction = WasmInstruction::Function(
+            WasmFunction {
+                args: fields.clone(),
+                def: constructor_def,
+                body: instructions,
+                locals: vec![], //TODO check: No processing in constructor?
+            }
+        );
+
+        self.wasm_instructions
+            .borrow_mut()
+            .push(wasm_constructor_instruction);
     }
 
     fn add_gleam_function_to_wasm_instructions(
@@ -395,9 +515,10 @@ impl WasmThing {
     ) {
         let name = gleam_function.name.clone();
         let len = self.type_section.borrow().len();
-        let loc: u32 = *self.functions_type_section_index.borrow_mut().get(&name).unwrap_or(&(len as u32));
+        let fun_len = self.functions_type_section_index.borrow().len();
+        let loc: (u32,u32) = *self.functions_type_section_index.borrow_mut().get(&name).unwrap_or(&(len as u32,fun_len as u32));
         let _ = self.functions_type_section_index.borrow_mut().insert(name.clone(), loc);
-        let wasm_var = WasmVar { idx: loc, name };
+        let wasm_var = WasmVar { idx: loc.0, name };
 
         let result_type = self.transform_gleam_type(gleam_function.return_type.as_ref());
         let mut arguments = Vec::new();
@@ -423,11 +544,11 @@ impl WasmThing {
             return_type: result_type,
             exported: gleam_function.public,
         };
-        if loc >= len as u32 {
+        if loc.0 >= len as u32 {
             //TODO while! Maybe? Thiink more
-            self.type_section.borrow_mut().push(PlaceHolder);
+            self.type_section.borrow_mut().push(PlaceHolder("".into()));
         }
-        self.type_section.borrow_mut()[loc as usize] = WasmTypeSectionEntry::Function(func_def.clone()); //TODO grow vec if necess
+        self.type_section.borrow_mut()[loc.0 as usize] = WasmTypeSectionEntry::Function(func_def.clone()); //TODO grow vec if necess
         let wasm_func = WasmInstruction::Function(
             WasmFunction {
                 args: arguments,
@@ -531,26 +652,84 @@ impl WasmThing {
                     todo!()
                 };
 
-                let pi = *self.functions_type_section_index.borrow().get(fn_name.as_str()).unwrap_or(&u32::MAX);
+                let pi = *self.functions_type_section_index.borrow().get(fn_name.as_str()).unwrap_or(&(u32::MAX,u32::MAX));
                 let fn_idx = match pi {
-                    u32::MAX => {
+                    (u32::MAX,u32::MAX) => {
                         let len = self.type_section.borrow().len();
-                        self.type_section.borrow_mut().push(PlaceHolder);
-                        let _ = self.functions_type_section_index.borrow_mut().insert(fn_name.clone(), len as u32);
-                        len as u32
+                        let fun_len = self.functions_type_section_index.borrow().len();
+                        self.type_section.borrow_mut().push(PlaceHolder("".into()));
+                        let _ = self.functions_type_section_index.borrow_mut().insert(fn_name.clone(), (len as u32,fun_len as u32));
+                        (len as u32,fun_len as u32)
                     }
                     i => { i }
                 };
                 let call = Call(   //TODO tail call use instead? CallReturn :)
                                    WasmVar {
-                                       idx: fn_idx,
+                                       idx: fn_idx.0,
                                        name: fn_name.clone(),
                                    }
                 );
                 instrs.push(call);
                 return (instrs, locals);
             }
-            // TypedExpr::RecordAccess { index, record, .. } => { TODO
+            TypedExpr::RecordAccess { index, record, label, .. } => {
+                let mut instrs = Vec::new();
+                let record_name = match record.as_ref() {
+                    TypedExpr::Var { name, .. } => {
+                        name
+                    }
+                    _ => { todo!() }
+                };
+                let r_idx = *scope.get(record_name).unwrap() as u32;
+                instrs.push(LocalGet(WasmVar { idx: r_idx, name: record_name.clone() }));
+                let record_type = record.type_().named_type_name().unwrap().1; //TODO this unwrap!
+
+                let struct_var = self.type_section.borrow().iter().enumerate().filter_map(|(i, x)|
+                    {
+                        match x {
+                            PlaceHolder(name) => {
+                                if &record_type == name {
+                                    Some(WasmVar {
+                                        idx: i as u32,
+                                        name: record_type.clone(),
+                                    })
+                                } else {
+                                    None
+                                }
+                            }
+                            WasmTypeSectionEntry::Struct(s) => {
+                                if s.info.name == record_type {
+                                    Some(s.info.clone())
+                                } else {
+                                    None
+                                }
+                            }
+                            _ => { None }
+                        }
+                    }
+                ).nth(0);
+
+                let struct_var = match struct_var {
+                    None => {
+                        let len = self.type_section.borrow().len();
+                        self.type_section.borrow_mut().push(PlaceHolder(record_type.clone()));
+                        WasmVar {
+                            idx: len as u32,
+                            name: record_type.clone(),
+                        }
+                    }
+                    Some(x) => x
+                };
+
+                let field_var = WasmVar {
+                    idx: *index as u32,
+                    name: label.clone(),
+                };
+
+                instrs.push(StructGet(struct_var, field_var));
+
+                return (instrs, locals);
+            }
             x => {
                 dbg!(x);
                 todo!()
@@ -572,7 +751,30 @@ impl WasmThing {
             Type::Named { name, .. } =>
                 match name.as_str() {
                     "Int" => I32,
-                    _ => todo!()
+                    x => {
+                        let len = self.type_section.borrow().len();
+                        let idx = self.type_section.borrow().iter().enumerate()
+                            .filter_map(|(i, entry)| {
+                                if let WasmTypeSectionEntry::Struct(WasmStructDef { info, .. }) = entry {
+                                    if info.name == x {
+                                        return Some(i);
+                                    }
+                                }
+                                return None;
+                            }
+                            )
+                            .nth(0).unwrap_or(len); //TODO map so easier, maybe :P
+
+                        if idx == len {
+                            self.type_section.borrow_mut().push(PlaceHolder(x.into()));
+                        }
+
+                        ConcreteRef(
+                            WasmVar {
+                                idx: idx as u32,
+                                name: x.into(),
+                            })
+                    }
                 }
             _ => todo!() //Prolly a ref, with correct index?,
         }
@@ -585,6 +787,17 @@ impl Wasmable for WasmThing {
         // let types = self.type_section.borrow().iter().map(|x| x.to_wat())
         //     .reduce(|mut acc, x| {acc.push_str("\n");acc.push_str(&x); acc}).unwrap();
 
+        let types = self.type_section.borrow().iter()
+            .map(|x| x.to_wat())
+            .reduce(|mut acc, x| {
+                if x != "" {
+                    acc.push_str("\n");
+                    acc.push_str(&x);
+                }
+                acc
+            }
+            ).unwrap_or_default();
+
         let instructions = self.wasm_instructions.borrow().iter().map(|x| x.to_wat())
             .reduce(|mut acc, x| {
                 acc.push_str("\n");
@@ -593,6 +806,10 @@ impl Wasmable for WasmThing {
             }).unwrap_or_default();
 
         let mut module = EcoString::from("(module\n");
+        module.push_str(&types);
+        if types != "" {
+            module.push_str("\n");
+        }
         module.push_str(&instructions);
         module.push_str(")");
         module
@@ -614,7 +831,7 @@ impl Wasmable for WasmThing {
         //Function section
         module.push(3);
         let mut section: Vec<u8> = self.functions_type_section_index.borrow().iter().flat_map(
-            |(_, x)| encode_unsigned_leb128(*x)
+            |(_, x)| encode_unsigned_leb128(x.0)
         ).collect();
         let entry_count = &mut encode_unsigned_leb128(self.functions_type_section_index.borrow().len() as u32);
         module.append(&mut encode_unsigned_leb128(section.len() as u32 + entry_count.len() as u32)); //TODO add bytes of below!
@@ -633,7 +850,8 @@ impl Wasmable for WasmThing {
                         fn_bytes.append(&mut encode_unsigned_leb128(name_bytes.len() as u32));
                         fn_bytes.append(&mut name_bytes);
                         fn_bytes.push(0); //function
-                        fn_bytes.append(&mut encode_unsigned_leb128(f.info.idx));
+                        let idx_fn = self.functions_type_section_index.borrow().get(&f.info.name).unwrap().1; //TODO better index for functions here, this is stupid
+                        fn_bytes.append(&mut encode_unsigned_leb128(idx_fn));
                         fn_bytes
                     }
                     _ => { panic!() }
@@ -731,46 +949,84 @@ fn wasm_3nd() {
     insta::assert_snapshot!(wasm_string_bytes);
 }
 
-// #[test]
-// fn wasm_4nd() {
-//     let gleam_module = trying_to_make_module(
-//         "
-//         pub fn add(x: Int, y: Int) -> Int {
-//             internal_add(x,y)
-//           }
-//         fn internal_add(x: Int, y: Int) -> Int {
-//             x + y
-//         }
-//           ",
-//     );
-//
-//     let w = WasmThing {
-//         gleam_module,
-//         wasm_instructions: RefCell::new(vec![]),
-//         identifiers: Default::default(),
-//         known_types: known_types(), // TODO prolly need types imported and a whole thing when getting some more
-//         function_names: HashMap::new(),
-//     };
-//     let res = w.transform().unwrap();
-//     let mut file = File::create("letstry.wasm").unwrap();
-//
-//     let _ = file.write_all(&res);
-//     // assert!(false);
-// }
-//
-// #[test]
-// fn wasm_5nd() {
-// //TODO pub types!
-//     let gleam_module = trying_to_make_module(
-//         "
-//          type Cat {
-//   Cat(name: Int, cuteness: Int)
-// }
-//         pub fn add(x: Int, y: Int) -> Int {
-//             let cat1 = Cat(name: x, cuteness: y)
-//             cat1.cuteness + cat1.name
-//           }",
-//     );
+#[test]
+fn wasm_4nd() {
+    let gleam_module = trying_to_make_module(
+        "
+        pub fn add(x: Int, y: Int) -> Int {
+            internal_add(x,y)
+          }
+        fn internal_add(x: Int, y: Int) -> Int {
+            x + y
+        }
+          ",
+    );
+    let w = WasmThing {
+        gleam_module,
+        wasm_instructions: RefCell::new(vec![]),
+        type_section: RefCell::new(vec![]),
+        functions_type_section_index: RefCell::new(Default::default()),
+    };
+    w.transform();
+    let wasm = w.to_wasm();
+    let wasm_string_bytes = wasm.iter().map(|x| format!("{:#04X?}", *x)).reduce(
+        |mut acc, x| {
+            acc.push_str("\n");
+            acc.push_str(&x);
+            acc
+        }
+    ).unwrap();
+
+    let wat = w.to_wat();
+    let mut file = File::create("letstry.wat").unwrap();
+    let _ = file.write_all(wat.as_bytes());
+    insta::assert_snapshot!(wat);
+
+    let mut file = File::create("letstry.wasm").unwrap();
+    let _ = file.write_all(&wasm);
+    insta::assert_snapshot!(wasm_string_bytes);
+}
+
+#[test]
+fn wasm_5nd() {
+//TODO pub types!
+    let gleam_module = trying_to_make_module(
+        "
+         type Cat {
+  Cat(name: Int, cuteness: Int)
+}
+        pub fn add(x: Int, y: Int) -> Int {
+            let cat1 = Cat(name: x, cuteness: y)
+            cat1.cuteness + cat1.name
+          }",
+    );
+
+    let w = WasmThing {
+        gleam_module,
+        wasm_instructions: RefCell::new(vec![]),
+        type_section: RefCell::new(vec![]),
+        functions_type_section_index: RefCell::new(Default::default()),
+    };
+    w.transform();
+    let wasm = w.to_wasm();
+    let wasm_string_bytes = wasm.iter().map(|x| format!("{:#04X?}", *x)).reduce(
+        |mut acc, x| {
+            acc.push_str("\n");
+            acc.push_str(&x);
+            acc
+        }
+    ).unwrap();
+
+    let wat = w.to_wat();
+    let mut file = File::create("letstry.wat").unwrap();
+    let _ = file.write_all(wat.as_bytes());
+    insta::assert_snapshot!(wat);
+
+
+    //TODO Uncaught (in promise) CompileError: wasm validation error: at offset 68: type mismatch: expression has type i32 but expected (ref 0) weird with which is exported I think... left off here
+    let mut file = File::create("letstry.wasm").unwrap();
+    let _ = file.write_all(&wasm);
+    insta::assert_snapshot!(wasm_string_bytes);
 //
 //
 //     //TODO: Uncaught (in promise) CompileError: wasm validation error: at offset 43: type mismatch: expression has type i64 but expected structref
@@ -815,47 +1071,65 @@ fn wasm_3nd() {
 //
 //     let _ = file.write_all(&res);
 //     // assert!(false);
-// }
-//
-// #[test]
-// fn wasm_6nd() {
-// //TODO pub types!
-//     let gleam_module = trying_to_make_module(
-//         "
-//          type Cat {
-//   Cat(name: Int, cuteness: Int)
-// }
-//
-// type Kitten {Kitten(name: Int, age: Int, cuteness: Int) }
-//
-//         fn add_cat(cat: Cat) -> Int {
-//     cat.cuteness + cat.name
-// }
-//
-//     fn grow(kitten: Kitten) -> Cat {
-//     Cat(name: kitten.name, cuteness: kitten.cuteness-1)
-// }
-//
-//         pub fn add(x: Int, y: Int) -> Int {
-//             let kitten = Kitten(name: x, cuteness: y, age: 12)
-//             let cat = grow(kitten)
-//             add_cat(cat)
-//           }",
-//     );
-//
-//     let w = WasmThing {
-//         gleam_module,
-//         wasm_instructions: RefCell::new(vec![]),
-//         identifiers: Default::default(),
-//         known_types: known_types(), // TODO prolly need types imported and a whole thing when getting some more
-//         function_names: HashMap::new(),
-//     };
-//     let res = w.transform().unwrap();
-//     let mut file = File::create("letstry.wasm").unwrap();
-//
-//     let _ = file.write_all(&res);
-//     // assert!(false);
-// }
+}
+
+#[test]
+fn wasm_6nd() {
+//TODO pub types!
+    let gleam_module = trying_to_make_module(
+        "
+         type Cat {
+  Cat(name: Int, cuteness: Int)
+}
+
+type Kitten {Kitten(name: Int, age: Int, cuteness: Int) }
+
+        fn add_cat(cat: Cat) -> Int {
+    cat.cuteness + cat.name
+}
+
+    fn grow(kitten: Kitten) -> Cat {
+    Cat(name: kitten.name, cuteness: kitten.cuteness-1)
+}
+
+        pub fn add(x: Int, y: Int) -> Int {
+            let kitten = Kitten(name: x, cuteness: y, age: 12)
+            let cat = grow(kitten)
+            add_cat(cat)
+          }",
+    );
+
+
+    let w = WasmThing {
+        gleam_module,
+        wasm_instructions: RefCell::new(vec![]),
+        type_section: RefCell::new(vec![]),
+        functions_type_section_index: RefCell::new(Default::default()),
+    };
+    w.transform();
+    let wasm = w.to_wasm();
+    let wasm_string_bytes = wasm.iter().map(|x| format!("{:#04X?}", *x)).reduce(
+        |mut acc, x| {
+            acc.push_str("\n");
+            acc.push_str(&x);
+            acc
+        }
+    ).unwrap();
+
+    let wat = w.to_wat();
+    let mut file = File::create("letstry.wat").unwrap();
+    let _ = file.write_all(wat.as_bytes());
+    insta::assert_snapshot!(wat);
+
+
+    //TODO Uncaught (in promise) CompileError: wasm validation error: at offset 68: type mismatch: expression has type i32 but expected (ref 0) weird with which is exported I think... left off here
+    let mut file = File::create("letstry.wasm").unwrap();
+    let _ = file.write_all(&wasm);
+    insta::assert_snapshot!(wasm_string_bytes);
+
+
+    // assert!(false);
+}
 
 /// A code generator that creates a .erl Erlang module and record header files
 /// for each Gleam module in the package.

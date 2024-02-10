@@ -1,0 +1,21 @@
+---
+source: compiler-core/src/codegen.rs
+expression: wat
+---
+(module
+(type $Cat (struct (field $name i32) (field $cuteness i32)))
+(func $Cat (param $name i32) (param $cuteness i32) (result (ref $Cat))
+    (local.get $name)
+    (local.get $cuteness)
+    (struct.new $Cat))
+(func $add (export "add") (param $x i32) (param $y i32) (result i32)
+    (local $cat1 (ref $Cat))
+    (local.get $x)
+    (local.get $y)
+    (call $Cat)
+    (local.set $cat1)
+    (local.get $cat1)
+    (struct.get $Cat $cuteness)
+    (local.get $cat1)
+    (struct.get $Cat $name)
+    (i32.add)))
