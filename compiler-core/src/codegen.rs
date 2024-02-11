@@ -850,9 +850,10 @@ impl Wasmable for WasmThing {
         //Function section
         dbg!("functions");
         module.push(3);
+        //OOOOh d'oh this is a hashmap but the order matters lol, now non-det makes sense :P
         let mut section: Vec<u8> = self.functions_type_section_index.borrow().iter().flat_map(
             |(_, x)| encode_unsigned_leb128(x.0)
-        ).collect();
+        ).sorted().collect();
         let entry_count = &mut encode_unsigned_leb128(self.functions_type_section_index.borrow().len() as u32);
         module.append(&mut encode_unsigned_leb128(section.len() as u32 + entry_count.len() as u32)); //TODO add bytes of below!
         module.append(entry_count);
@@ -871,26 +872,7 @@ impl Wasmable for WasmThing {
                         fn_bytes.append(&mut encode_unsigned_leb128(name_bytes.len() as u32));
                         fn_bytes.append(&mut name_bytes);
                         fn_bytes.push(0); //function
-                        let idx_fn = self.functions_type_section_index.borrow().get(&f.info.name).unwrap().1; //TODO better index for functions here, this is stupid
-                        // let idx_fn = self.type_section.borrow().iter()
-                        //     .filter(|x|
-                        //         {
-                        //             match x {
-                        //                 WasmTypeSectionEntry::Function(_) => true,
-                        //                 _ => false
-                        //             }
-                        //         }
-                        //     )
-                        //     .enumerate()
-                        //     .filter_map(|(i, x)|
-                        //         {
-                        //             match x {
-                        //                 WasmTypeSectionEntry::Function(WasmFuncDef { info, .. }) if info.name == f.info.name => Some(i),
-                        //                 _ => None
-                        //             }
-                        //         }
-                        //     )
-                        //     .nth(0).unwrap() as u32; //TODO still really stupid..... And now the Hashmap with the tuples can remove 2nd u32 again, or make it correct and get it here lol
+                        let idx_fn = self.functions_type_section_index.borrow().get(&f.info.name).unwrap().1; //TODO better index for functions here, this is stupid or maybe not now we sort te fn section hehe
                         fn_bytes.append(&mut encode_unsigned_leb128(idx_fn));
                         fn_bytes
                     }
@@ -991,6 +973,7 @@ fn wasm_3nd() {
 
 #[test]
 fn wasm_4nd() {
+    //TODO oh no also not det........ In the wasm case, both above seem fine each time, so the call? And the order of the gleam module matter?
     let gleam_module = trying_to_make_module(
         "
         pub fn add(x: Int, y: Int) -> Int {
@@ -1001,6 +984,8 @@ fn wasm_4nd() {
         }
           ",
     );
+    // insta::assert_snapshot!(format!("{:?}",&gleam_module).as_str()); TODO aha! Not the order changes! So I have a Placeholer problem somewhere:P
+    // So walk back from snap shot diff... when failing and work back from there?
     let w = WasmThing {
         gleam_module,
         wasm_instructions: RefCell::new(vec![]),
@@ -1040,6 +1025,23 @@ fn wasm_5nd() {
             cat1.cuteness + cat1.name
           }",
     );
+
+    //TODO oh no also not deterministic! WTFFFFFFFFFF! Is it the gleam module? YEs
+    // work back from:
+    // 29    29 │ 0x7F
+    // 30    30 │ 0x03
+    // 31    31 │ 0x03
+    // 32    32 │ 0x02
+    // 33 │+0x02
+    // 33    34 │ 0x01
+    // 34       │-0x02
+    // 35    35 │ 0x07
+    // 36    36 │ 0x07
+    // 37    37 │ 0x01
+    // 38    38 │ 0x03
+
+    // So sort the exports lol, then makes sense if it changes what function is reffered to with a function index lol....
+
 
     let w = WasmThing {
         gleam_module,
@@ -1164,7 +1166,7 @@ type Kitten {Kitten(name: Int, age: Int, cuteness: Int) }
     insta::assert_snapshot!(wat);
 
 
-    //TODO Uncaught (in promise) CompileError: wasm validation error: at offset 68: type mismatch: expression has type i32 but expected (ref 0) weird with which is exported I think... left off here
+    //TODO wtf not deterministic???????????????? How! Different errors to depending on output.........
     let mut file = File::create("letstry.wasm").unwrap();
     let _ = file.write_all(&wasm);
     insta::assert_snapshot!(wasm_string_bytes);
