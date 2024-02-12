@@ -69,7 +69,7 @@ fn encode_signed_leb128(x: i32) -> Vec<u8> {
     // }
 }
 
-trait Wasmable {
+pub trait Wasmable {
     fn to_wat(&self) -> EcoString;
     fn to_wasm(&self) -> Vec<u8>;
 }
@@ -388,6 +388,17 @@ pub(crate) struct WasmThing {
     // //globals?
     // pub(crate) known_types: RefCell<HashMap<&'static str, ValType<'static>>>,
     // pub(crate) function_names: HashMap<&'static str, (&'static str, u32)>,
+}
+
+impl WasmThing {
+    pub fn new(module: crate::ast::Module<ModuleInterface, Definition<Arc<Type>, TypedExpr, EcoString, EcoString>>) -> Self {
+        WasmThing {
+            gleam_module: module,
+            wasm_instructions: RefCell::new(vec![]),
+            type_section: RefCell::new(vec![]),
+            functions_type_section_index: RefCell::new(Default::default()),
+        }
+    }
 }
 
 // pub(crate) fn known_types() -> RefCell<HashMap<&'static str, ValType<'static>>> {
