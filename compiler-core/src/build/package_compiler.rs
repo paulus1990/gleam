@@ -371,12 +371,13 @@ where
         //todo clone lol
         let w = crate::codegen::WasmThing::new(gleam_module.clone());
         w.transform();
-
-        let mut file = File::create(format!("{}.wasm",self.out)).unwrap();
-        let _ = file.write_all(&w.to_wasm());
-
         let mut file = File::create(format!("{}.wat",self.out)).unwrap();
-        let _ = file.write_all(w.to_wat().as_bytes());
+        let wat = w.to_wat();
+        let _ = file.write_all(wat.as_bytes());
+        let wasm = wat::parse_str(wat).unwrap(); //TODO //?;
+        let mut file = File::create(format!("{}.wasm",self.out)).unwrap();
+        let _ = file.write_all(&wasm);
+
         Ok(())
     }
 

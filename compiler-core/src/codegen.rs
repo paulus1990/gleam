@@ -73,7 +73,6 @@ fn encode_signed_leb128(x: i32) -> Vec<u8> {
 
 pub trait Wasmable {
     fn to_wat(&self) -> EcoString;
-    fn to_wasm(&self) -> Vec<u8>;
 }
 
 #[derive(Clone, Debug)]
@@ -107,17 +106,6 @@ impl Wasmable for WasmTypeSectionEntry {
             WasmTypeSectionEntry::Struct(x) => { x.to_wat() }
         }
     }
-
-    fn to_wasm(&self) -> Vec<u8> {
-        match self {
-            PlaceHolder(x) => {
-                dbg!(x);
-                panic!()
-            }
-            WasmTypeSectionEntry::Function(x) => { x.to_wasm() }
-            WasmTypeSectionEntry::Struct(x) => { x.to_wasm() }
-        }
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -131,21 +119,6 @@ struct WasmFuncDef {
 impl Wasmable for WasmFuncDef {
     fn to_wat(&self) -> EcoString {
         "".into() //TODO I don't think we need the sections in wat
-    }
-
-    fn to_wasm(&self) -> Vec<u8> {
-        //TODO prolly refactor lol
-        let mut rename_me = Vec::new();
-        rename_me.push(0x60); //Func type
-        let param_len = self.params.len();
-        rename_me.append(&mut encode_unsigned_leb128(param_len as u32));
-        for param in &self.params {
-            rename_me.append(&mut param.to_wasm());
-        }
-        let result_len = 1;
-        rename_me.push(result_len);
-        rename_me.append(&mut self.return_type.to_wasm());
-        rename_me
     }
 }
 
@@ -164,17 +137,6 @@ impl Wasmable for WasmStructDef {
         acc.push_str("))"); //TODO move somewhere else the \n?
         acc.into()
     }
-
-    fn to_wasm(&self) -> Vec<u8> {
-        let mut acc = vec![0x5f];
-        acc.append(&mut encode_unsigned_leb128(self.fields.len() as u32));
-        self.fields.iter().for_each(
-            |(_, t)| {
-                acc.append(&mut t.to_wasm());
-                acc.push(0); //immutable
-            });
-        acc
-    }
 }
 
 impl Wasmable for WasmType {
@@ -186,17 +148,6 @@ impl Wasmable for WasmType {
                 // format!("(ref {}  (;{};))", index, x.name).into()
                 // but we don't have the full info here hmmmmmmmmmmmmmmmmmm
                 format!("(ref ${})", x.name).into()
-            }
-        }
-    }
-
-    fn to_wasm(&self) -> Vec<u8> {
-        match self {
-            I32 => vec![0x7f],
-            ConcreteRef(x) => {
-                let mut v = vec![0x64];
-                v.append(&mut encode_unsigned_leb128(x.idx));
-                v
             }
         }
     }
@@ -212,10 +163,6 @@ struct WasmVar {
 impl Wasmable for WasmVar {
     fn to_wat(&self) -> EcoString {
         format!("${}", self.name).into()
-    }
-
-    fn to_wasm(&self) -> Vec<u8> {
-        encode_unsigned_leb128(self.idx)
     }
 }
 
@@ -250,10 +197,6 @@ impl Wasmable for WasmFunction {
 
         format!("(func ${}{export}{args} {ret}{locals}{body})", self.def.info.name).into()
     }
-
-    fn to_wasm(&self) -> Vec<u8> {
-        todo!()
-    }
 }
 
 #[derive(Debug)]
@@ -282,62 +225,6 @@ impl Wasmable for WasmInstruction {
             I32Const(x) => { format!("i32.const {x}").into() }
             StructNew(x) => { format!("struct.new ${}", x.name).into() }
             StructGet(struc, field) => { format!("struct.get ${} ${}", struc.name, field.name).into() }
-        }
-    }
-
-    fn to_wasm(&self) -> Vec<u8> {
-        match self {
-            I32Const(x) => {
-                let mut acc = vec![0x41];
-                acc.append(&mut encode_signed_leb128(*x));
-                acc
-            }
-            WasmInstruction::Function(f) => {
-                let mut func = Vec::new();
-                let mut local_count = encode_unsigned_leb128(f.locals.len() as u32);
-                let mut body: Vec<u8> = f.body.iter().flat_map(|x| x.to_wasm()).collect();
-                let mut locals: Vec<u8> = f.locals.iter().flat_map(|(_, t)| {
-                    let mut acc = vec![1]; //var type
-                    acc.append(t.to_wasm().as_mut());
-                    acc
-                }
-                ).collect();
-                let mut func_size = encode_unsigned_leb128((body.len() + 1 + local_count.len() + locals.len()) as u32); //+1 for end should include local count len????
-                func.append(&mut func_size);
-                func.append(&mut local_count);
-                func.append(&mut locals);
-                func.append(&mut body);
-                func.push(0x0b); //end function
-                func
-            }
-            LocalGet(v) => {
-                let mut acc = vec![0x20];
-                acc.append(&mut encode_unsigned_leb128(v.idx));
-                acc
-            }
-            LocalSet(v) => {
-                let mut acc = vec![0x21];
-                acc.append(&mut encode_unsigned_leb128(v.idx));
-                acc
-            }
-            Call(v) => {
-                let mut acc = vec![0x10];
-                acc.append(&mut encode_unsigned_leb128(v.idx));
-                acc
-            }
-            I32Add => { vec![0x6a] }
-            I32Sub => { vec![0x6b] }
-            StructNew(v) => {
-                let mut acc = vec![0xfb, 0x00];
-                acc.append(&mut encode_unsigned_leb128(v.idx));
-                acc
-            }
-            StructGet(struc, field) => {
-                let mut acc = vec![0xfb, 0x02];
-                acc.append(&mut encode_unsigned_leb128(struc.idx));
-                acc.append(&mut encode_unsigned_leb128(field.idx));
-                acc
-            }
         }
     }
 }
@@ -838,72 +725,6 @@ impl Wasmable for WasmThing {
         module.push_str(")");
         module
     }
-
-    fn to_wasm(&self) -> Vec<u8> {
-        let mut module = vec![0, 'a' as u8, 's' as u8, 'm' as u8, 1, 0, 0, 0];
-
-        //Type section
-        dbg!("types");
-        module.push(1);
-        let mut section: Vec<u8> = self.type_section.borrow().iter().flat_map(
-            |x| x.to_wasm()
-        ).collect();
-        let entry_count = &mut encode_unsigned_leb128(self.type_section.borrow().len() as u32);
-        module.append(&mut encode_unsigned_leb128(section.len() as u32 + entry_count.len() as u32));
-        module.append(entry_count);
-        module.append(&mut section);
-
-        //Function section
-        dbg!("functions");
-        module.push(3);
-        //OOOOh d'oh this is a hashmap but the order matters lol, now non-det makes sense :P
-        let mut section: Vec<u8> = self.functions_type_section_index.borrow().iter().flat_map(
-            |(_, x)| encode_unsigned_leb128(x.0)
-        ).sorted().collect();
-        let entry_count = &mut encode_unsigned_leb128(self.functions_type_section_index.borrow().len() as u32);
-        module.append(&mut encode_unsigned_leb128(section.len() as u32 + entry_count.len() as u32)); //TODO add bytes of below!
-        module.append(entry_count);
-        module.append(&mut section);
-
-        //Export section
-        dbg!("exports");
-        module.push(7);
-
-        let mut section: Vec<u8> = self.type_section.borrow().iter().filter(|x| x.public()).flat_map(
-            |x| {
-                match x {
-                    WasmTypeSectionEntry::Function(f) => {
-                        let mut fn_bytes = Vec::new();
-                        let mut name_bytes = f.info.name.to_ascii_lowercase().as_bytes().to_vec();//nm name TODO lower case? Ascii?
-                        fn_bytes.append(&mut encode_unsigned_leb128(name_bytes.len() as u32));
-                        fn_bytes.append(&mut name_bytes);
-                        fn_bytes.push(0); //function
-                        let idx_fn = self.functions_type_section_index.borrow().get(&f.info.name).unwrap().1; //TODO better index for functions here, this is stupid or maybe not now we sort te fn section hehe
-                        fn_bytes.append(&mut encode_unsigned_leb128(idx_fn));
-                        fn_bytes
-                    }
-                    _ => { panic!() }
-                }
-            }
-        ).collect();
-        let entry_count = &mut encode_unsigned_leb128(self.type_section.borrow().iter().filter(|x| x.public()).count() as u32);
-        module.append(&mut encode_unsigned_leb128(section.len() as u32 + entry_count.len() as u32));
-        module.append(entry_count);
-        module.append(&mut section);
-
-        //Code section
-        module.push(0x0a);
-        let instr_len = self.wasm_instructions.borrow().len();
-        let mut section: Vec<u8> = self.wasm_instructions.borrow().iter().flat_map(
-            |instr| instr.to_wasm()
-        ).collect();
-        let byte_len = section.len() + encode_unsigned_leb128(instr_len as u32).len();
-        module.append(&mut encode_unsigned_leb128(byte_len as u32));
-        module.append(&mut encode_unsigned_leb128(instr_len as u32));
-        module.append(&mut section);
-
-        module
-    }
 }
 
 #[test]
@@ -921,23 +742,16 @@ fn wasm_2n() {
         functions_type_section_index: RefCell::new(Default::default()),
     };
     w.transform();
-    let wasm = w.to_wasm();
-    let wasm_string_bytes = wasm.iter().map(|x| format!("{:#04X?}", *x)).reduce(
-        |mut acc, x| {
-            acc.push_str("\n");
-            acc.push_str(&x);
-            acc
-        }
-    ).unwrap();
 
     let wat = w.to_wat();
     let mut file = File::create("letstry.wat").unwrap();
     let _ = file.write_all(wat.as_bytes());
     insta::assert_snapshot!(wat);
 
+    let wasm = wat::parse_str(wat).unwrap();
+
     let mut file = File::create("letstry.wasm").unwrap();
     let _ = file.write_all(&wasm);
-    insta::assert_snapshot!(wasm_string_bytes);
 }
 
 
