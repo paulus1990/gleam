@@ -2793,6 +2793,12 @@ pub mod implementations {
     pub fn get_javascript(self) -> bool {
       self.reader.get_bool_field(2)
     }
+    #[inline]
+    pub fn get_wasm(self) -> bool {
+      //TODO
+      // self.reader.get_bool_field(3)
+      false
+    }
   }
 
   pub struct Builder<'a> { builder: ::capnp::private::layout::StructBuilder<'a> }

@@ -465,6 +465,7 @@ impl ModuleDecoder {
             gleam: reader.get_gleam(),
             uses_erlang_externals: reader.get_erlang(),
             uses_javascript_externals: reader.get_javascript(),
+            uses_wasm_externals: reader.get_wasm(),
         }
     }
 

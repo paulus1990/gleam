@@ -13,7 +13,7 @@ use ecow::EcoString;
 use im::HashMap;
 use itertools::Itertools;
 use std::cell::RefCell;
-use std::{fmt::Debug, fs::File, io::Write, sync::Arc};
+use std::{fmt::Debug, sync::Arc};
 
 use crate::analyse::TargetSupport;
 use crate::ast::{ArgNames, Assignment, CallArg, CustomType, Definition, Function, Pattern, Statement, TypedExpr};
@@ -443,7 +443,7 @@ impl WasmThing {
     }
 
     fn add_gleam_custom_type(&self, gleam_custom_type: &CustomType<Arc<Type>>) {
-        let mut name = gleam_custom_type.name.clone();
+        let name = gleam_custom_type.name.clone();
         let mut struct_name = name.clone();
         struct_name.push_str("_struct");
         let len = self.type_section.borrow().len();
@@ -484,7 +484,7 @@ impl WasmThing {
         self.type_section.borrow_mut()[type_section_idx] = WasmTypeSectionEntry::Struct(struct_def.clone());
         dbg!(self.type_section.borrow());
 
-        let mut constructor_name = name;
+        let constructor_name = name;
         // constructor_name.push_str("_constructor"); // Oh the type and constructor same name hmmmmm else we dont know we call really
         // TODO or push for func name but put in the hasmap differently
         let constructor_idx = type_section_idx + 1;

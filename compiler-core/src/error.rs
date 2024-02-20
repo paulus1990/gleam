@@ -2402,6 +2402,7 @@ and there is no implementation for the {} target.",
                     let target = match target {
                         Target::Erlang => "Erlang",
                         Target::JavaScript => "JavaScript",
+                        Target::Wasm => "WebAssembly",
                     };
                     let text = wrap_format!(
                         "The `{name}` function is public but doesn't have an \

@@ -427,6 +427,7 @@ impl ValueConstructorVariant {
                 gleam: true,
                 uses_javascript_externals: false,
                 uses_erlang_externals: false,
+                uses_wasm_externals: false,
             },
 
             ValueConstructorVariant::ModuleFn {

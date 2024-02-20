@@ -667,6 +667,7 @@ fn infer_function(
         gleam: false,
         uses_erlang_externals: external_erlang.is_some(),
         uses_javascript_externals: external_javascript.is_some(),
+        uses_wasm_externals: external_wasm.is_some(),
     };
 
     // Infer the type using the preregistered args + return types as a starting point
@@ -993,6 +994,7 @@ fn infer_module_constant(
             gleam: false,
             uses_erlang_externals: false,
             uses_javascript_externals: false,
+            uses_wasm_externals: false,
         },
     );
     let typed_expr = expr_typer.infer_const(&annotation, *value)?;

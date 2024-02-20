@@ -366,7 +366,7 @@ where
 
     fn perform_wasm_codegen(&self, modules: &[Module]) -> Result<(), Error> {
         //TODO more than 1ste module! But this way can run something :)
-        let gleam_module = &modules[1];
+        let gleam_module = &modules[0];
         let gleam_module = &gleam_module.ast;
         //todo clone lol
         let w = crate::codegen::WasmThing::new(gleam_module.clone());

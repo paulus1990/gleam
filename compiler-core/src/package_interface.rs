@@ -240,6 +240,7 @@ impl ImplementationsInterface {
             gleam,
             uses_erlang_externals,
             uses_javascript_externals,
+            uses_wasm_externals,
         } = implementations;
 
         ImplementationsInterface {
@@ -473,6 +474,7 @@ impl ModuleInterface {
                     return_annotation: _,
                     external_erlang: _,
                     external_javascript: _,
+                    external_wasm: _,
                 }) => {
                     let mut id_map = IdMap::new();
                     let _ = functions.insert(

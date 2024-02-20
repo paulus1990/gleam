@@ -42,6 +42,9 @@ pub struct Implementations {
     /// Wether the function has an implementation that uses external javascript
     /// code.
     pub uses_javascript_externals: bool,
+    /// Wether the function has an implementation that uses external wasm
+    /// code.
+    pub uses_wasm_externals: bool,
 }
 
 impl Implementations {
@@ -55,6 +58,7 @@ impl Implementations {
             gleam,
             uses_erlang_externals,
             uses_javascript_externals,
+            uses_wasm_externals,
         } = implementations;
 
         // If a pure-Gleam function uses a function that doesn't have a pure
@@ -93,6 +97,7 @@ impl Implementations {
             || match target {
                 Target::Erlang => self.uses_erlang_externals,
                 Target::JavaScript => self.uses_javascript_externals,
+                Target::Wasm => self.uses_wasm_externals
             }
     }
 }

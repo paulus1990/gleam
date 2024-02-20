@@ -1550,6 +1550,7 @@ where
                 gleam: true,
                 uses_erlang_externals: false,
                 uses_javascript_externals: false,
+                uses_wasm_externals: false,
             },
         })))
     }
@@ -2164,6 +2165,7 @@ where
                     gleam: true,
                     uses_erlang_externals: false,
                     uses_javascript_externals: false,
+                    uses_wasm_externals: false,
                 },
             })))
         } else {
