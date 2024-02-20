@@ -271,6 +271,7 @@ fn compile_statement_sequence(src: &str) -> Result<Vec1<TypedStatement>, crate::
             gleam: false,
             uses_erlang_externals: false,
             uses_javascript_externals: false,
+            uses_wasm_externals: false,
         },
     )
     .infer_statements(ast)
@@ -2001,6 +2002,7 @@ fn assert_suitable_main_function_not_module_function() {
                 gleam: true,
                 uses_erlang_externals: false,
                 uses_javascript_externals: false,
+                uses_wasm_externals: false,
             },
         },
     };
@@ -2024,6 +2026,7 @@ fn assert_suitable_main_function_wrong_arity() {
                 gleam: true,
                 uses_erlang_externals: false,
                 uses_javascript_externals: false,
+                uses_wasm_externals: false,
             },
         },
     };
@@ -2047,6 +2050,7 @@ fn assert_suitable_main_function_ok() {
                 gleam: true,
                 uses_erlang_externals: false,
                 uses_javascript_externals: false,
+                uses_wasm_externals: false,
             },
         },
     };
@@ -2070,6 +2074,7 @@ fn assert_suitable_main_function_erlang_not_supported() {
                 gleam: false,
                 uses_erlang_externals: false,
                 uses_javascript_externals: true,
+                uses_wasm_externals: false,
             },
         },
     };
@@ -2093,6 +2098,7 @@ fn assert_suitable_main_function_javascript_not_supported() {
                 gleam: false,
                 uses_erlang_externals: true,
                 uses_javascript_externals: false,
+                uses_wasm_externals: false,
             },
         },
     };

@@ -13,14 +13,18 @@ use im::HashMap;
 use itertools::Itertools;
 use std::cell::RefCell;
 use std::{fmt::Debug, sync::Arc};
+use std::fs::File;
+use std::io::Write;
 
 use crate::ast::{Assignment, CallArg, CustomType, Definition, Function, Pattern, Statement, TypedExpr};
 use crate::type_::{ModuleInterface, Type};
 use camino::Utf8Path;
 use wasabi_leb128::WriteLeb128;
+use crate::analyse::TargetSupport;
 use crate::codegen::WasmInstruction::{Call, I32Add, I32Const, I32Sub, LocalGet, LocalSet, StructGet, StructNew};
 use crate::codegen::WasmType::{I32, ConcreteRef};
 use crate::codegen::WasmTypeSectionEntry::PlaceHolder;
+use crate::warning::{TypeWarningEmitter, WarningEmitter};
 
 
 //TODO non-ascii names and upper-case var names.
@@ -338,7 +342,6 @@ impl Wasmable for WasmInstruction {
     }
 }
 
-#[test]
 fn trying_to_make_module(
     program: &str,
 ) -> crate::ast::Module<ModuleInterface, Definition<Arc<Type>, TypedExpr, EcoString, EcoString>> {

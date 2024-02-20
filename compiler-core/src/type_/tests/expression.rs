@@ -41,6 +41,7 @@ pub fn pure_gleam_2() { pure_gleam_1() * 2 }
                     gleam: true,
                     uses_erlang_externals: false,
                     uses_javascript_externals: false,
+                    uses_wasm_externals: false,
                 }
             ),
             (
@@ -49,6 +50,7 @@ pub fn pure_gleam_2() { pure_gleam_1() * 2 }
                     gleam: true,
                     uses_erlang_externals: false,
                     uses_javascript_externals: false,
+                    uses_wasm_externals: false,
                 }
             )
         ],
@@ -71,6 +73,7 @@ pub fn erlang_only_2() { erlang_only_1() * 2 }
                     gleam: false,
                     uses_erlang_externals: true,
                     uses_javascript_externals: false,
+                    uses_wasm_externals: false,
                 }
             ),
             (
@@ -79,6 +82,7 @@ pub fn erlang_only_2() { erlang_only_1() * 2 }
                     gleam: false,
                     uses_erlang_externals: true,
                     uses_javascript_externals: false,
+                    uses_wasm_externals: false,
                 }
             )
         ],
@@ -102,6 +106,7 @@ pub fn all_externals_2() { all_externals_1() * 2 }
                     gleam: false,
                     uses_erlang_externals: true,
                     uses_javascript_externals: true,
+                    uses_wasm_externals: false,
                 }
             ),
             (
@@ -110,6 +115,7 @@ pub fn all_externals_2() { all_externals_1() * 2 }
                     gleam: false,
                     uses_erlang_externals: true,
                     uses_javascript_externals: true,
+                    uses_wasm_externals: false,
                 }
             )
         ],
@@ -137,6 +143,7 @@ pub fn pure_gleam() {
                     gleam: true,
                     uses_erlang_externals: true,
                     uses_javascript_externals: false,
+                    uses_wasm_externals: false,
                 }
             ),
             (
@@ -145,6 +152,7 @@ pub fn pure_gleam() {
                     gleam: true,
                     uses_erlang_externals: false,
                     uses_javascript_externals: true,
+                    uses_wasm_externals: false,
                 }
             ),
             (
@@ -153,6 +161,7 @@ pub fn pure_gleam() {
                     gleam: true,
                     uses_erlang_externals: true,
                     uses_javascript_externals: true,
+                    uses_wasm_externals: false,
                 }
             )
         ],
@@ -178,6 +187,7 @@ pub fn all_externals() -> Int { erlang_external_and_javascript_body() }
                     gleam: false,
                     uses_erlang_externals: true,
                     uses_javascript_externals: true,
+                    uses_wasm_externals: false,
                 }
             ),
             (
@@ -186,6 +196,7 @@ pub fn all_externals() -> Int { erlang_external_and_javascript_body() }
                     gleam: false,
                     uses_erlang_externals: true,
                     uses_javascript_externals: true,
+                    uses_wasm_externals: false,
                 }
             ),
             (
@@ -194,6 +205,7 @@ pub fn all_externals() -> Int { erlang_external_and_javascript_body() }
                     gleam: false,
                     uses_erlang_externals: false,
                     uses_javascript_externals: true,
+                    uses_wasm_externals: false,
                 }
             )
         ],
@@ -219,6 +231,7 @@ pub fn all_externals() -> Int { javascript_external_and_erlang_body() }
                     gleam: false,
                     uses_erlang_externals: true,
                     uses_javascript_externals: true,
+                    uses_wasm_externals: false,
                 }
             ),
             (
@@ -227,6 +240,7 @@ pub fn all_externals() -> Int { javascript_external_and_erlang_body() }
                     gleam: false,
                     uses_erlang_externals: true,
                     uses_javascript_externals: false,
+                    uses_wasm_externals: false,
                 }
             ),
             (
@@ -235,6 +249,7 @@ pub fn all_externals() -> Int { javascript_external_and_erlang_body() }
                     gleam: false,
                     uses_erlang_externals: true,
                     uses_javascript_externals: true,
+                    uses_wasm_externals: false,
                 }
             )
         ],
