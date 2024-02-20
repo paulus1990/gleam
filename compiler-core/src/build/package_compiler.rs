@@ -366,18 +366,19 @@ where
 
     fn perform_wasm_codegen(&self, modules: &[Module]) -> Result<(), Error> {
         //TODO more than 1ste module! But this way can run something :)
-        let gleam_module = &modules[0];
-        let gleam_module = &gleam_module.ast;
-        //todo clone lol
-        let w = crate::codegen::WasmThing::new(gleam_module.clone());
-        w.transform();
-        let mut file = File::create(format!("{}.wat",self.out)).unwrap();
-        let wat = w.to_wat();
-        let _ = file.write_all(wat.as_bytes());
-        let wasm = wat::parse_str(wat).unwrap(); //TODO //?;
-        let mut file = File::create(format!("{}.wasm",self.out)).unwrap();
-        let _ = file.write_all(&wasm);
-
+        if modules.len() > 0 {
+            let gleam_module = &modules[0];
+            let gleam_module = &gleam_module.ast;
+            //todo clone lol
+            let w = crate::codegen::WasmThing::new(gleam_module.clone());
+            w.transform();
+            let mut file = File::create(format!("{}.wat",self.out)).unwrap();
+            let wat = w.to_wat();
+            let _ = file.write_all(wat.as_bytes());
+            let wasm = wat::parse_str(wat).unwrap(); //TODO propagate error;
+            let mut file = File::create(format!("{}.wasm",self.out)).unwrap();
+            let _ = file.write_all(&wasm);
+        }
         Ok(())
     }
 

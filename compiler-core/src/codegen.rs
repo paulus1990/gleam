@@ -93,7 +93,7 @@ impl WasmTypeSectionEntry {
     fn public(&self) -> bool {
         match self {
             WasmTypeSectionEntry::Function(f) => f.exported,
-            _ => false
+            _ => false //TODO for structs etc.
         }
     }
 }
@@ -102,7 +102,7 @@ impl Wasmable for WasmTypeSectionEntry {
     fn to_wat(&self) -> EcoString {
         match self {
             PlaceHolder(_) => { panic!() }
-            WasmTypeSectionEntry::Function(x) => { x.to_wat() }
+            WasmTypeSectionEntry::Function(x) => { x.to_wat() } //TODO see if can be removed!
             WasmTypeSectionEntry::Struct(x) => { x.to_wat() }
         }
     }
@@ -703,6 +703,8 @@ impl Wasmable for WasmThing {
         module
     }
 }
+
+//TODO from i32.add in stack way to rhs & lhs is S-expr? Same with struct.new?
 
 #[test]
 fn wasm_2n() {
