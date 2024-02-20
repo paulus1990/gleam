@@ -6,7 +6,6 @@ use crate::{
     io::FileSystemWriter,
     javascript,
     line_numbers::LineNumbers,
-    warning::{TypeWarningEmitter, WarningEmitter},
     Result,
 };
 use ecow::EcoString;
@@ -15,8 +14,7 @@ use itertools::Itertools;
 use std::cell::RefCell;
 use std::{fmt::Debug, sync::Arc};
 
-use crate::analyse::TargetSupport;
-use crate::ast::{ArgNames, Assignment, CallArg, CustomType, Definition, Function, Pattern, Statement, TypedExpr};
+use crate::ast::{Assignment, CallArg, CustomType, Definition, Function, Pattern, Statement, TypedExpr};
 use crate::type_::{ModuleInterface, Type};
 use camino::Utf8Path;
 use wasabi_leb128::WriteLeb128;
@@ -340,6 +338,7 @@ impl Wasmable for WasmInstruction {
     }
 }
 
+#[test]
 fn trying_to_make_module(
     program: &str,
 ) -> crate::ast::Module<ModuleInterface, Definition<Arc<Type>, TypedExpr, EcoString, EcoString>> {
@@ -580,13 +579,6 @@ impl WasmThing {
         self.wasm_instructions
             .borrow_mut()
             .push(wasm_func);
-    }
-
-    fn get_gleam_name(&self, names: &ArgNames) -> String {
-        match names {
-            ArgNames::Named { name } => return name.to_string(),
-            _ => todo!(),
-        }
     }
 
     fn transform_gleam_statement(
