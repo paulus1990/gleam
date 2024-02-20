@@ -85,6 +85,8 @@ pathdiff = { version = "0.2.1", features = ["camino"] }
 id-arena = "2.1"
 # leb128
 wasabi_leb128 = "0.4.0"
+# Parse wat to wasm
+wat = "1.200.0"
 
 [build-dependencies]
 # Data (de)serialisation

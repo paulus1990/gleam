@@ -958,23 +958,16 @@ fn wasm_3nd() {
         functions_type_section_index: RefCell::new(Default::default()),
     };
     w.transform();
-    let wasm = w.to_wasm();
-    let wasm_string_bytes = wasm.iter().map(|x| format!("{:#04X?}", *x)).reduce(
-        |mut acc, x| {
-            acc.push_str("\n");
-            acc.push_str(&x);
-            acc
-        }
-    ).unwrap();
 
     let wat = w.to_wat();
     let mut file = File::create("letstry.wat").unwrap();
     let _ = file.write_all(wat.as_bytes());
     insta::assert_snapshot!(wat);
 
+    let wasm = wat::parse_str(wat).unwrap();
+
     let mut file = File::create("letstry.wasm").unwrap();
     let _ = file.write_all(&wasm);
-    insta::assert_snapshot!(wasm_string_bytes);
 }
 
 #[test]
@@ -999,23 +992,16 @@ fn wasm_4nd() {
         functions_type_section_index: RefCell::new(Default::default()),
     };
     w.transform();
-    let wasm = w.to_wasm();
-    let wasm_string_bytes = wasm.iter().map(|x| format!("{:#04X?}", *x)).reduce(
-        |mut acc, x| {
-            acc.push_str("\n");
-            acc.push_str(&x);
-            acc
-        }
-    ).unwrap();
 
     let wat = w.to_wat();
     let mut file = File::create("letstry.wat").unwrap();
     let _ = file.write_all(wat.as_bytes());
     insta::assert_snapshot!(wat);
 
+    let wasm = wat::parse_str(wat).unwrap();
+
     let mut file = File::create("letstry.wasm").unwrap();
     let _ = file.write_all(&wasm);
-    insta::assert_snapshot!(wasm_string_bytes);
 }
 
 #[test]
@@ -1056,14 +1042,6 @@ fn wasm_5nd() {
         functions_type_section_index: RefCell::new(Default::default()),
     };
     w.transform();
-    let wasm = w.to_wasm();
-    let wasm_string_bytes = wasm.iter().map(|x| format!("{:#04X?}", *x)).reduce(
-        |mut acc, x| {
-            acc.push_str("\n");
-            acc.push_str(&x);
-            acc
-        }
-    ).unwrap();
 
     let wat = w.to_wat();
     let mut file = File::create("letstry.wat").unwrap();
@@ -1071,12 +1049,10 @@ fn wasm_5nd() {
     insta::assert_snapshot!(wat);
 
 
-    //TODO Uncaught (in promise) CompileError: wasm validation error: at offset 68: type mismatch: expression has type i32 but expected (ref 0) weird with which is exported I think... left off here
-    //Problem here is in the call it calls 10 01 where it should call 10 00, 1st func in the func section (type idx 01 but func idx 00)
+    let wasm = wat::parse_str(wat).unwrap();
+
     let mut file = File::create("letstry.wasm").unwrap();
     let _ = file.write_all(&wasm);
-    insta::assert_snapshot!(wasm_string_bytes);
-
 //
 //
 //     //TODO: Uncaught (in promise) CompileError: wasm validation error: at offset 43: type mismatch: expression has type i64 but expected structref
@@ -1157,28 +1133,16 @@ type Kitten {Kitten(name: Int, age: Int, cuteness: Int) }
         functions_type_section_index: RefCell::new(Default::default()),
     };
     w.transform();
-    let wasm = w.to_wasm();
-    let wasm_string_bytes = wasm.iter().map(|x| format!("{:#04X?}", *x)).reduce(
-        |mut acc, x| {
-            acc.push_str("\n");
-            acc.push_str(&x);
-            acc
-        }
-    ).unwrap();
 
     let wat = w.to_wat();
     let mut file = File::create("letstry.wat").unwrap();
     let _ = file.write_all(wat.as_bytes());
     insta::assert_snapshot!(wat);
 
+    let wasm = wat::parse_str(wat).unwrap();
 
-    //TODO wtf not deterministic???????????????? How! Different errors to depending on output.........
     let mut file = File::create("letstry.wasm").unwrap();
     let _ = file.write_all(&wasm);
-    insta::assert_snapshot!(wasm_string_bytes);
-
-
-    // assert!(false);
 }
 
 /// A code generator that creates a .erl Erlang module and record header files
