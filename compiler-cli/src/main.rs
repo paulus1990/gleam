@@ -78,6 +78,7 @@ use fs::{get_current_directory, get_project_root};
 pub use gleam_core::error::{Error, Result};
 
 use gleam_core::{
+    analyse::TargetSupport,
     build::{Codegen, Mode, Options, Runtime, Target},
     hex::RetirementReason,
     paths::ProjectPaths,
@@ -231,15 +232,22 @@ enum Command {
     Export(ExportTarget),
 }
 
-#[derive(Subcommand, Debug, Clone, Copy)]
+#[derive(Subcommand, Debug, Clone)]
 pub enum ExportTarget {
-    /// Precompiled Erlang, suitable for deployment.
+    /// Precompiled Erlang, suitable for deployment
     ErlangShipment,
-    /// The package bundled into a tarball, suitable for publishing to Hex.
+    /// The package bundled into a tarball, suitable for publishing to Hex
     HexTarball,
-    /// The JavaScript prelude module.
+    /// The JavaScript prelude module
     JavascriptPrelude,
+    /// The TypeScript prelude module
     TypescriptPrelude,
+    /// Information on the modules, functions, and types in the project in JSON format
+    PackageInterface {
+        #[clap(long = "out", required = true)]
+        /// The path to write the JSON file to
+        output: Utf8PathBuf,
+    },
 }
 
 #[derive(Args, Debug, Clone)]
@@ -461,6 +469,9 @@ fn main() {
         Command::Export(ExportTarget::HexTarball) => export::hex_tarball(),
         Command::Export(ExportTarget::JavascriptPrelude) => export::javascript_prelude(),
         Command::Export(ExportTarget::TypescriptPrelude) => export::typescript_prelude(),
+        Command::Export(ExportTarget::PackageInterface { output }) => {
+            export::package_interface(output)
+        }
     };
 
     match result {
@@ -480,6 +491,7 @@ fn main() {
 fn command_check(target: Option<Target>) -> Result<(), Error> {
     let _ = build::main(
         Options {
+            root_target_support: TargetSupport::Enforced,
             warnings_as_errors: false,
             codegen: Codegen::DepsOnly,
             mode: Mode::Dev,
@@ -493,6 +505,7 @@ fn command_check(target: Option<Target>) -> Result<(), Error> {
 fn command_build(target: Option<Target>, warnings_as_errors: bool) -> Result<(), Error> {
     let _ = build::main(
         Options {
+            root_target_support: TargetSupport::Enforced,
             warnings_as_errors,
             codegen: Codegen::All,
             mode: Mode::Dev,

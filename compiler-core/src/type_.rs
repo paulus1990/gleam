@@ -16,6 +16,7 @@ pub use error::{Error, UnifyErrorSituation, Warning};
 pub(crate) use expression::ExprTyper;
 pub use fields::FieldMap;
 pub use prelude::*;
+use serde::Serialize;
 
 use crate::{
     ast::{
@@ -24,7 +25,7 @@ use crate::{
         UntypedMultiPattern, UntypedPattern, UntypedRecordUpdateArg,
     },
     bit_array,
-    build::Origin,
+    build::{Origin, Target},
 };
 use error::*;
 use hydrator::Hydrator;
@@ -36,7 +37,7 @@ use std::{
     sync::Arc,
 };
 
-use self::expression::SupportedTargets;
+use self::expression::Implementations;
 
 pub trait HasType {
     fn type_(&self) -> Arc<Type>;
@@ -49,11 +50,12 @@ pub enum Type {
     /// arguments (aka "generics" or "parametric polymorphism").
     ///
     /// If the type is defined in the Gleam prelude the `module` field will be
-    /// empty, otherwise it will contain the name of the module that
-    /// defines the type.
+    /// the string "gleam", otherwise it will contain the name of the module
+    /// that defines the type.
     ///
     Named {
         public: bool,
+        package: EcoString,
         module: EcoString,
         name: EcoString,
         args: Vec<Arc<Type>>,
@@ -182,6 +184,7 @@ impl Type {
     pub fn get_app_args(
         &self,
         public: bool,
+        package: &str,
         module: &str,
         name: &str,
         arity: usize,
@@ -204,7 +207,7 @@ impl Type {
             Self::Var { type_: typ } => {
                 let args: Vec<_> = match typ.borrow().deref() {
                     TypeVar::Link { type_: typ } => {
-                        return typ.get_app_args(public, module, name, arity, environment);
+                        return typ.get_app_args(public, package, module, name, arity, environment);
                     }
 
                     TypeVar::Unbound { .. } => {
@@ -219,6 +222,7 @@ impl Type {
                 *typ.borrow_mut() = TypeVar::Link {
                     type_: Arc::new(Self::Named {
                         name: name.into(),
+                        package: package.into(),
                         module: module.into(),
                         args: args.clone(),
                         public,
@@ -296,7 +300,7 @@ pub enum ValueConstructorVariant {
         location: SrcSpan,
         module: EcoString,
         literal: Constant<Arc<Type>, EcoString>,
-        supported_targets: SupportedTargets,
+        implementations: Implementations,
     },
 
     /// A constant defined locally, for example when pattern matching on string literals
@@ -312,7 +316,7 @@ pub enum ValueConstructorVariant {
         arity: usize,
         location: SrcSpan,
         documentation: Option<EcoString>,
-        supported_targets: SupportedTargets,
+        implementations: Implementations,
     },
 
     /// A constructor for a custom type
@@ -414,6 +418,25 @@ impl ValueConstructorVariant {
     pub fn is_module_fn(&self) -> bool {
         matches!(self, Self::ModuleFn { .. })
     }
+
+    pub fn implementations(&self) -> Implementations {
+        match self {
+            ValueConstructorVariant::Record { .. }
+            | ValueConstructorVariant::LocalConstant { .. }
+            | ValueConstructorVariant::LocalVariable { .. } => Implementations {
+                gleam: true,
+                uses_javascript_externals: false,
+                uses_erlang_externals: false,
+            },
+
+            ValueConstructorVariant::ModuleFn {
+                implementations, ..
+            }
+            | ValueConstructorVariant::ModuleConstant {
+                implementations, ..
+            } => *implementations,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -483,27 +506,73 @@ pub struct ModuleInterface {
     pub origin: Origin,
     pub package: EcoString,
     pub types: HashMap<EcoString, TypeConstructor>,
-    pub types_value_constructors: HashMap<EcoString, Vec<TypeValueConstructor>>,
+    pub types_value_constructors: HashMap<EcoString, TypeVariantConstructors>,
     pub values: HashMap<EcoString, ValueConstructor>,
     pub accessors: HashMap<EcoString, AccessorsMap>,
     pub unused_imports: Vec<SrcSpan>,
+    pub contains_todo: bool,
+}
+
+/// Information on the constructors of a custom type.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TypeVariantConstructors {
+    /// The id of the generic type variables of the generic version of the type that these
+    /// constructors belong to.
+    /// For example, if we have this type:
+    ///
+    /// ```gleam
+    /// pub type Option(a) {
+    ///   Some(a)
+    ///   None
+    /// }
+    /// ```
+    ///
+    /// and `a` is a Generic type variable with id 1, then this field will be `[1]`.
+    ///
+    pub type_parameters_ids: Vec<u64>,
+    pub variants: Vec<TypeValueConstructor>,
+}
+
+impl TypeVariantConstructors {
+    pub(crate) fn new(
+        variants: Vec<TypeValueConstructor>,
+        type_parameters: &[EcoString],
+        hydrator: Hydrator,
+    ) -> TypeVariantConstructors {
+        let named_types = hydrator.named_type_variables();
+        let type_parameters = type_parameters
+            .iter()
+            .map(|p| {
+                let t = named_types
+                    .get(p)
+                    .expect("Type parameter not found in hydrator");
+                let error = "Hydrator must not store non generic types here";
+                match t.type_.as_ref() {
+                    Type::Var { type_: typ } => match typ.borrow().deref() {
+                        TypeVar::Generic { id } => *id,
+                        _ => panic!("{}", error),
+                    },
+                    _ => panic!("{}", error),
+                }
+            })
+            .collect_vec();
+        Self {
+            type_parameters_ids: type_parameters,
+            variants,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypeValueConstructor {
     pub name: EcoString,
-    pub parameters: Vec<TypeValueConstructorParameter>,
+    pub parameters: Vec<TypeValueConstructorField>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TypeValueConstructorParameter {
+pub struct TypeValueConstructorField {
     /// This type of this parameter
     pub type_: Arc<Type>,
-    /// If this type is a generic type parameter then this is the index of the
-    /// parameter.
-    /// For example, in `type Type(a) { Value(a) }` the `a` in Value(a)` has an
-    /// index of 0.
-    pub generic_type_parameter_index: Option<usize>,
 }
 
 impl ModuleInterface {
@@ -517,6 +586,7 @@ impl ModuleInterface {
             values: Default::default(),
             accessors: Default::default(),
             unused_imports: Default::default(),
+            contains_todo: false,
         }
     }
 
@@ -538,25 +608,22 @@ impl ModuleInterface {
         }
     }
 
-    pub fn get_main_function(&self) -> Result<ModuleFunction, crate::Error> {
-        match self.values.get(&EcoString::from("main")) {
-            Some(ValueConstructor {
-                variant: ValueConstructorVariant::ModuleFn { arity: 0, .. },
-                ..
-            }) => Ok(ModuleFunction {
-                package: self.package.clone(),
-            }),
-            Some(ValueConstructor {
-                variant: ValueConstructorVariant::ModuleFn { arity, .. },
-                ..
-            }) => Err(crate::Error::MainFunctionHasWrongArity {
-                module: self.name.clone(),
-                arity: *arity,
-            }),
-            _ => Err(crate::Error::ModuleDoesNotHaveMainFunction {
-                module: self.name.clone(),
-            }),
-        }
+    pub fn get_main_function(&self, target: Target) -> Result<ModuleFunction, crate::Error> {
+        let not_found = || crate::Error::ModuleDoesNotHaveMainFunction {
+            module: self.name.clone(),
+        };
+
+        // Module must have a value with the name "main"
+        let value = self
+            .values
+            .get(&EcoString::from("main"))
+            .ok_or_else(not_found)?;
+
+        assert_suitable_main_function(value, &self.name, target)?;
+
+        Ok(ModuleFunction {
+            package: self.package.clone(),
+        })
     }
 
     pub fn public_value_names(&self) -> Vec<EcoString> {
@@ -704,7 +771,7 @@ pub struct ValueConstructor {
     pub type_: Arc<Type>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub enum Deprecation {
     NotDeprecated,
     Deprecated { message: EcoString },
@@ -909,6 +976,7 @@ pub fn generalise(t: Arc<Type>) -> Arc<Type> {
         Type::Named {
             public,
             module,
+            package,
             name,
             args,
         } => {
@@ -916,6 +984,7 @@ pub fn generalise(t: Arc<Type>) -> Arc<Type> {
             Arc::new(Type::Named {
                 public: *public,
                 module: module.clone(),
+                package: package.clone(),
                 name: name.clone(),
                 args,
             })
@@ -936,4 +1005,43 @@ pub enum FieldAccessUsage {
     MethodCall,
     /// Used as `thing.field`
     Other,
+}
+
+/// Verify that a value is suitable to be used as a main function.
+fn assert_suitable_main_function(
+    value: &ValueConstructor,
+    module_name: &EcoString,
+    target: Target,
+) -> Result<(), crate::Error> {
+    let not_found = || crate::Error::ModuleDoesNotHaveMainFunction {
+        module: module_name.clone(),
+    };
+
+    // The value must be a module function
+    let ValueConstructorVariant::ModuleFn {
+        arity,
+        implementations,
+        ..
+    } = &value.variant
+    else {
+        return Err(not_found());
+    };
+
+    // The target must be supported
+    if !implementations.supports(target) {
+        return Err(crate::Error::MainFunctionDoesNotSupportTarget {
+            module: module_name.clone(),
+            target,
+        });
+    }
+
+    // The function must be zero arity
+    if *arity != 0 {
+        return Err(crate::Error::MainFunctionHasWrongArity {
+            module: module_name.clone(),
+            arity: *arity,
+        });
+    }
+
+    Ok(())
 }

@@ -9,8 +9,9 @@ use crate::{
     },
     build::Origin,
     type_::{
-        self, expression::SupportedTargets, Deprecation, ModuleInterface, Type, TypeConstructor,
-        TypeValueConstructor, ValueConstructor, ValueConstructorVariant,
+        self, expression::Implementations, Deprecation, ModuleInterface, Type, TypeConstructor,
+        TypeValueConstructor, TypeValueConstructorField, TypeVariantConstructors, ValueConstructor,
+        ValueConstructorVariant,
     },
     uid::UniqueIdGenerator,
 };
@@ -28,6 +29,7 @@ fn roundtrip(input: &ModuleInterface) -> ModuleInterface {
 
 fn constant_module(constant: TypedConstant) -> ModuleInterface {
     ModuleInterface {
+        contains_todo: false,
         package: "some_package".into(),
         origin: Origin::Src,
         name: "a".into(),
@@ -46,7 +48,11 @@ fn constant_module(constant: TypedConstant) -> ModuleInterface {
                     literal: constant,
                     location: SrcSpan::default(),
                     module: "one/two".into(),
-                    supported_targets: SupportedTargets::all(),
+                    implementations: Implementations {
+                        gleam: true,
+                        uses_erlang_externals: false,
+                        uses_javascript_externals: false,
+                    },
                 },
             },
         )]
@@ -72,6 +78,7 @@ fn bit_array_segment_option_module(option: TypedConstantBitArraySegmentOption) -
 #[test]
 fn empty_module() {
     let module = ModuleInterface {
+        contains_todo: false,
         package: "some_package".into(),
         origin: Origin::Src,
         name: "one/two".into(),
@@ -87,6 +94,7 @@ fn empty_module() {
 #[test]
 fn module_with_private_type() {
     let module = ModuleInterface {
+        contains_todo: false,
         package: "some_package".into(),
         origin: Origin::Src,
         name: "a/b".into(),
@@ -113,6 +121,7 @@ fn module_with_private_type() {
 #[test]
 fn module_with_unused_import() {
     let module = ModuleInterface {
+        contains_todo: false,
         package: "some_package".into(),
         origin: Origin::Src,
         name: "a".into(),
@@ -131,6 +140,7 @@ fn module_with_unused_import() {
 #[test]
 fn module_with_app_type() {
     let module = ModuleInterface {
+        contains_todo: false,
         package: "some_package".into(),
         origin: Origin::Src,
         name: "a/b".into(),
@@ -157,6 +167,7 @@ fn module_with_app_type() {
 #[test]
 fn module_with_fn_type() {
     let module = ModuleInterface {
+        contains_todo: false,
         package: "some_package".into(),
         origin: Origin::Src,
         name: "a/b".into(),
@@ -183,6 +194,7 @@ fn module_with_fn_type() {
 #[test]
 fn module_with_tuple_type() {
     let module = ModuleInterface {
+        contains_todo: false,
         package: "some_package".into(),
         origin: Origin::Src,
         name: "a/b".into(),
@@ -215,6 +227,7 @@ fn module_with_generic_type() {
 
     fn make(t1: Arc<Type>, t2: Arc<Type>) -> ModuleInterface {
         ModuleInterface {
+            contains_todo: false,
             package: "some_package".into(),
             origin: Origin::Src,
             name: "a/b".into(),
@@ -247,6 +260,7 @@ fn module_with_type_links() {
 
     fn make(type_: Arc<Type>) -> ModuleInterface {
         ModuleInterface {
+            contains_todo: false,
             package: "some_package".into(),
             origin: Origin::Src,
             name: "a".into(),
@@ -275,16 +289,20 @@ fn module_with_type_links() {
 #[test]
 fn module_type_to_constructors_mapping() {
     let module = ModuleInterface {
+        contains_todo: false,
         package: "some_package".into(),
         origin: Origin::Src,
         name: "a".into(),
         types: HashMap::new(),
         types_value_constructors: [(
             "SomeType".into(),
-            vec![TypeValueConstructor {
-                name: "One".into(),
-                parameters: vec![],
-            }],
+            TypeVariantConstructors {
+                type_parameters_ids: vec![0, 1, 2],
+                variants: vec![TypeValueConstructor {
+                    name: "One".into(),
+                    parameters: vec![],
+                }],
+            },
         )]
         .into(),
         unused_imports: Default::default(),
@@ -298,6 +316,7 @@ fn module_type_to_constructors_mapping() {
 #[test]
 fn module_fn_value() {
     let module = ModuleInterface {
+        contains_todo: false,
         package: "some_package".into(),
         origin: Origin::Src,
         name: "a".into(),
@@ -321,7 +340,11 @@ fn module_fn_value() {
                         start: 535,
                         end: 1100,
                     },
-                    supported_targets: SupportedTargets::all(),
+                    implementations: Implementations {
+                        gleam: true,
+                        uses_erlang_externals: false,
+                        uses_javascript_externals: false,
+                    },
                 },
             },
         )]
@@ -333,6 +356,7 @@ fn module_fn_value() {
 #[test]
 fn deprecated_module_fn_value() {
     let module = ModuleInterface {
+        contains_todo: false,
         package: "some_package".into(),
         origin: Origin::Src,
         name: "a".into(),
@@ -358,7 +382,11 @@ fn deprecated_module_fn_value() {
                         start: 535,
                         end: 1100,
                     },
-                    supported_targets: SupportedTargets::all(),
+                    implementations: Implementations {
+                        gleam: true,
+                        uses_erlang_externals: false,
+                        uses_javascript_externals: false,
+                    },
                 },
             },
         )]
@@ -370,6 +398,7 @@ fn deprecated_module_fn_value() {
 #[test]
 fn private_module_fn_value() {
     let module = ModuleInterface {
+        contains_todo: false,
         package: "some_package".into(),
         origin: Origin::Src,
         name: "a".into(),
@@ -393,7 +422,11 @@ fn private_module_fn_value() {
                         start: 535,
                         end: 1100,
                     },
-                    supported_targets: SupportedTargets::all(),
+                    implementations: Implementations {
+                        gleam: true,
+                        uses_erlang_externals: false,
+                        uses_javascript_externals: false,
+                    },
                 },
             },
         )]
@@ -407,6 +440,7 @@ fn private_module_fn_value() {
 #[test]
 fn module_fn_value_regression() {
     let module = ModuleInterface {
+        contains_todo: false,
         package: "some_package".into(),
         origin: Origin::Src,
         name: "a/b/c".into(),
@@ -430,7 +464,11 @@ fn module_fn_value_regression() {
                         start: 52,
                         end: 1100,
                     },
-                    supported_targets: SupportedTargets::all(),
+                    implementations: Implementations {
+                        gleam: true,
+                        uses_erlang_externals: false,
+                        uses_javascript_externals: false,
+                    },
                 },
             },
         )]
@@ -443,6 +481,7 @@ fn module_fn_value_regression() {
 #[test]
 fn module_fn_value_with_field_map() {
     let module = ModuleInterface {
+        contains_todo: false,
         package: "some_package".into(),
         origin: Origin::Src,
         name: "a".into(),
@@ -466,7 +505,11 @@ fn module_fn_value_with_field_map() {
                     module: "a".into(),
                     arity: 5,
                     location: SrcSpan { start: 2, end: 11 },
-                    supported_targets: SupportedTargets::all(),
+                    implementations: Implementations {
+                        gleam: true,
+                        uses_erlang_externals: false,
+                        uses_javascript_externals: false,
+                    },
                 },
             },
         )]
@@ -481,6 +524,7 @@ fn record_value() {
     let mut random = rand::thread_rng();
 
     let module = ModuleInterface {
+        contains_todo: false,
         package: "some_package".into(),
         origin: Origin::Src,
         name: "a".into(),
@@ -520,6 +564,7 @@ fn record_value_with_field_map() {
     let mut random = rand::thread_rng();
 
     let module = ModuleInterface {
+        contains_todo: false,
         package: "some_package".into(),
         origin: Origin::Src,
         name: "a".into(),
@@ -560,6 +605,7 @@ fn record_value_with_field_map() {
 #[test]
 fn accessors() {
     let module = ModuleInterface {
+        contains_todo: false,
         package: "some_package".into(),
         origin: Origin::Src,
         name: "a".into(),
@@ -758,12 +804,17 @@ fn constant_var() {
                 literal: one_original.clone(),
                 location: SrcSpan::default(),
                 module: "one/two".into(),
-                supported_targets: SupportedTargets::all(),
+                implementations: Implementations {
+                    gleam: true,
+                    uses_erlang_externals: false,
+                    uses_javascript_externals: false,
+                },
             },
         })),
     };
 
     let module = ModuleInterface {
+        contains_todo: false,
         package: "some_package".into(),
         origin: Origin::Src,
         name: "a".into(),
@@ -783,7 +834,11 @@ fn constant_var() {
                         literal: one,
                         location: SrcSpan::default(),
                         module: "one/two".into(),
-                        supported_targets: SupportedTargets::all(),
+                        implementations: Implementations {
+                            gleam: true,
+                            uses_erlang_externals: false,
+                            uses_javascript_externals: false,
+                        },
                     },
                 },
             ),
@@ -798,7 +853,11 @@ fn constant_var() {
                         literal: one_original,
                         location: SrcSpan::default(),
                         module: "one/two".into(),
-                        supported_targets: SupportedTargets::all(),
+                        implementations: Implementations {
+                            gleam: true,
+                            uses_erlang_externals: false,
+                            uses_javascript_externals: false,
+                        },
                     },
                 },
             ),
@@ -968,6 +1027,7 @@ fn constant_bit_array_native() {
 #[test]
 fn deprecated_type() {
     let module = ModuleInterface {
+        contains_todo: false,
         package: "some_package".into(),
         origin: Origin::Src,
         name: "a/b".into(),
@@ -991,4 +1051,120 @@ fn deprecated_type() {
         accessors: HashMap::new(),
     };
     assert_eq!(roundtrip(&module), module);
+}
+
+#[test]
+fn contains_todo() {
+    let module = ModuleInterface {
+        contains_todo: true,
+        //             ^^^^ It does, it does!
+        package: "some_package".into(),
+        origin: Origin::Src,
+        name: "a/b".into(),
+        types: [].into(),
+        types_value_constructors: HashMap::new(),
+        values: HashMap::new(),
+        unused_imports: Vec::new(),
+        accessors: HashMap::new(),
+    };
+    assert_eq!(roundtrip(&module), module);
+}
+
+#[test]
+fn module_fn_value_with_external_implementations() {
+    let module = ModuleInterface {
+        contains_todo: false,
+        package: "some_package".into(),
+        origin: Origin::Src,
+        name: "a/b/c".into(),
+        types: HashMap::new(),
+        types_value_constructors: HashMap::new(),
+        unused_imports: Vec::new(),
+        accessors: HashMap::new(),
+        values: [(
+            "one".into(),
+            ValueConstructor {
+                public: true,
+                deprecation: Deprecation::NotDeprecated,
+                type_: type_::int(),
+                variant: ValueConstructorVariant::ModuleFn {
+                    documentation: Some("wabble!".into()),
+                    name: "one".into(),
+                    field_map: None,
+                    module: "a".into(),
+                    arity: 5,
+                    location: SrcSpan {
+                        start: 52,
+                        end: 1100,
+                    },
+                    implementations: Implementations {
+                        gleam: false,
+                        uses_erlang_externals: true,
+                        uses_javascript_externals: true,
+                    },
+                },
+            },
+        )]
+        .into(),
+    };
+
+    assert_eq!(roundtrip(&module), module);
+}
+
+// https://github.com/gleam-lang/gleam/issues/2599
+#[test]
+fn type_variable_ids_in_constructors_are_shared() {
+    let module = ModuleInterface {
+        contains_todo: false,
+        package: "some_package".into(),
+        origin: Origin::Src,
+        name: "a/b/c".into(),
+        types: HashMap::new(),
+        types_value_constructors: HashMap::from([(
+            "SomeType".into(),
+            TypeVariantConstructors {
+                type_parameters_ids: vec![4, 5, 6],
+                variants: vec![TypeValueConstructor {
+                    name: "One".into(),
+                    parameters: vec![
+                        TypeValueConstructorField {
+                            type_: type_::generic_var(6),
+                        },
+                        TypeValueConstructorField {
+                            type_: type_::int(),
+                        },
+                        TypeValueConstructorField {
+                            type_: type_::tuple(vec![type_::generic_var(4), type_::generic_var(5)]),
+                        },
+                    ],
+                }],
+            },
+        )]),
+        unused_imports: Vec::new(),
+        accessors: HashMap::new(),
+        values: [].into(),
+    };
+
+    let expected = HashMap::from([(
+        "SomeType".into(),
+        TypeVariantConstructors {
+            type_parameters_ids: vec![1, 2, 0],
+            variants: vec![TypeValueConstructor {
+                name: "One".into(),
+                parameters: vec![
+                    TypeValueConstructorField {
+                        type_: type_::generic_var(0),
+                    },
+                    TypeValueConstructorField {
+                        type_: type_::int(),
+                    },
+                    TypeValueConstructorField {
+                        type_: type_::tuple(vec![type_::generic_var(1), type_::generic_var(2)]),
+                    },
+                ],
+            }],
+        },
+    )]);
+
+    assert_eq!(roundtrip(&module).types_value_constructors, expected);
 }

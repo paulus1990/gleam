@@ -50,6 +50,7 @@ pub struct Options {
     pub target: Option<Target>,
     pub codegen: Codegen,
     pub warnings_as_errors: bool,
+    pub root_target_support: TargetSupport,
 }
 
 #[derive(Debug)]
@@ -60,9 +61,13 @@ pub struct Built {
 }
 
 impl Built {
-    pub fn get_main_function(&self, module: &EcoString) -> Result<ModuleFunction, Error> {
+    pub fn get_main_function(
+        &self,
+        module: &EcoString,
+        target: Target,
+    ) -> Result<ModuleFunction, Error> {
         match self.module_interfaces.get(module) {
-            Some(module_data) => module_data.get_main_function(),
+            Some(module_data) => module_data.get_main_function(target),
             None => Err(Error::ModuleDoesNotExist {
                 module: module.clone(),
                 suggestion: None,
@@ -543,6 +548,7 @@ where
 
             Target::Wasm => super::TargetCodegenConfiguration::Wasm {},
         };
+
         let mut compiler = PackageCompiler::new(
             config,
             mode,
@@ -558,9 +564,20 @@ where
         compiler.perform_codegen = self.options.codegen.should_codegen(is_root);
         compiler.compile_beam_bytecode = self.options.codegen.should_codegen(is_root);
         compiler.subprocess_stdio = self.subprocess_stdio;
-        if is_root {
-            compiler.target_support = TargetSupport::Enforced;
-        }
+        compiler.target_support = if is_root {
+            // When compiling the root package it is context specific as to whether we need to
+            // enforce that all functions have an implementation for the current target.
+            // Typically we do, but if we are using `gleam run -m $module` to run a module that
+            // belongs to a dependency we don't need to enforce this as we don't want to fail
+            // compilation. It's impossible for a dependecy module to call functions from the root
+            // package, so it's OK if they could not be compiled.
+            self.options.root_target_support
+        } else {
+            // When compiling dependencies we don't enforce that all functions have an
+            // implementation for the current target. It is OK if they have APIs that are
+            // unaccessible so long as they are not used by the root package.
+            TargetSupport::NotEnforced
+        };
 
         // Compile project to Erlang or JavaScript source code
         let compiled = compiler.compile(
@@ -579,6 +596,11 @@ fn order_packages(packages: &HashMap<String, ManifestPackage>) -> Result<Vec<Eco
     dep_tree::toposort_deps(
         packages
             .values()
+            // Making sure that the package order is deterministic, to prevent different
+            // compilations of the same project compiling in different orders. This could impact
+            // any bugged outcomes, though not any where the compiler is working correctly, so it's
+            // mostly to aid debugging.
+            .sorted_by(|a, b| a.name.cmp(&b.name))
             .map(|package| {
                 (
                     package.name.as_str().into(),

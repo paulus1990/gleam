@@ -1,7 +1,7 @@
 use super::*;
 use crate::{
     ast::{Arg, Function},
-    type_::{expression::SupportedTargets, Deprecation},
+    type_::{expression::Implementations, Deprecation},
 };
 use ecow::EcoString;
 
@@ -38,7 +38,11 @@ fn parse_and_order(
             external_erlang: None,
             external_javascript: None,
             external_wasm: None,
-            supported_targets: SupportedTargets::all(),
+            implementations: Implementations {
+                gleam: true,
+                uses_erlang_externals: true,
+                uses_javascript_externals: false,
+            },
         })
         .collect_vec();
     let constants = constants
@@ -52,7 +56,11 @@ fn parse_and_order(
                 name: EcoString::from(*name),
                 annotation: None,
                 value: Box::from(const_value),
-                supported_targets: SupportedTargets::all(),
+                implementations: Implementations {
+                    gleam: true,
+                    uses_erlang_externals: true,
+                    uses_javascript_externals: false,
+                },
                 type_: (),
                 deprecation: Deprecation::NotDeprecated,
             }

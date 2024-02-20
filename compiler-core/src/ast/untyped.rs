@@ -171,7 +171,7 @@ impl UntypedExpr {
         }
     }
 
-    pub fn binop_precedence(&self) -> u8 {
+    pub fn bin_op_precedence(&self) -> u8 {
         match self {
             Self::BinOp { name, .. } => name.precedence(),
             Self::PipeLine { .. } => 5,
@@ -179,7 +179,7 @@ impl UntypedExpr {
         }
     }
 
-    pub fn binop_name(&self) -> Option<&BinOp> {
+    pub fn bin_op_name(&self) -> Option<&BinOp> {
         match self {
             UntypedExpr::BinOp { name, .. } => Some(name),
             _ => None,
@@ -207,6 +207,16 @@ impl UntypedExpr {
     #[must_use]
     pub fn is_placeholder(&self) -> bool {
         matches!(self, Self::Placeholder { .. })
+    }
+
+    #[must_use]
+    pub fn is_binop(&self) -> bool {
+        matches!(self, Self::BinOp { .. })
+    }
+
+    #[must_use]
+    pub fn is_pipeline(&self) -> bool {
+        matches!(self, Self::PipeLine { .. })
     }
 }
 

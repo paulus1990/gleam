@@ -145,8 +145,11 @@ pub enum Error {
     #[error("{module} does not have a main function")]
     ModuleDoesNotHaveMainFunction { module: EcoString },
 
-    #[error("{module} has the wrong arity so it can not be run.")]
+    #[error("{module}'s main function has the wrong arity so it can not be run")]
     MainFunctionHasWrongArity { module: EcoString, arity: usize },
+
+    #[error("{module}'s main function does not support the current target")]
+    MainFunctionDoesNotSupportTarget { module: EcoString, target: Target },
 
     #[error("{input} is not a valid version. {error}")]
     InvalidVersionFormat { input: String, error: String },
@@ -246,6 +249,9 @@ file_names.iter().map(|x| x.as_str()).join(", "))]
 
     #[error("The --javascript-prelude flag must be given when compiling to JavaScript")]
     JavaScriptPreludeRequired,
+
+    #[error("The modules {unfinished:?} contain todo expressions and so cannot be published")]
+    CannotPublishTodo { unfinished: Vec<EcoString> },
 }
 
 impl Error {
@@ -534,9 +540,20 @@ forward slash and must not end with a slash."
                 level: Level::Error,
                 location: None,
                 hint: Some(format!(
-                    "Add a function with the singature `pub fn main() {{}}` \
+                    "Add a public `main` function to \
 to `src/{module}.gleam`."
                 )),
+            },
+
+            Error::MainFunctionDoesNotSupportTarget { module, target } => Diagnostic {
+                title: "Target not supported".into(),
+                text: wrap_format!(
+                    "`{module}` has a main function, but it does not support the {target} \
+target, so it cannot be run."
+                ),
+                level: Level::Error,
+                location: None,
+                hint: None,
             },
 
             Error::MainFunctionHasWrongArity { module, arity } => Diagnostic {
@@ -572,6 +589,25 @@ to `src/{module}.gleam`."
 If you want to overwrite these files, delete them and run the command again.
 ",
                     file_names
+                        .iter()
+                        .map(|name| format!("  - {}", name.as_str()))
+                        .join("\n")
+                ),
+                level: Level::Error,
+                hint: None,
+                location: None,
+            },
+
+            Error::CannotPublishTodo { unfinished } => Diagnostic {
+                title: "Cannot publish unfinished code".into(),
+                text: format!(
+                    "These modules contain todo expressions and cannot be published:
+
+{}
+
+Please remove them and try again.
+",
+                    unfinished
                         .iter()
                         .map(|name| format!("  - {}", name.as_str()))
                         .join("\n")
@@ -2267,14 +2303,74 @@ implementation but the function name `{function}` is not valid."
                     }
                 }
 
-                TypeError::UnsupportedTarget {
+                TypeError::InexhaustiveLetAssignment { location, missing } => {
+                    let mut text: String =
+                        "This assignment uses a pattern that does not match all possible
+values. If one of the other values is used then the assignment
+will crash.
+
+The missing patterns are:\n"
+                            .into();
+                    for missing in missing {
+                        text.push_str("\n    ");
+                        text.push_str(missing);
+                    }
+                    text.push('\n');
+
+                    Diagnostic {
+                        title: "Inexhaustive pattern".into(),
+                        text,
+                        hint: Some(
+                            "Use a more general pattern or use `let assert` instead.".into(),
+                        ),
+                        level: Level::Error,
+                        location: Some(Location {
+                            src: src.clone(),
+                            path: path.to_path_buf(),
+                            label: Label {
+                                text: None,
+                                span: *location,
+                            },
+                            extra_labels: Vec::new(),
+                        }),
+                    }
+                }
+
+                TypeError::InexhaustiveCaseExpression { location, missing } => {
+                    let mut text: String =
+                        "This case expression does not have a pattern for all possible values.
+If is run on one of the values without a pattern then it will crash.
+
+The missing patterns are:\n"
+                            .into();
+                    for missing in missing {
+                        text.push_str("\n    ");
+                        text.push_str(missing);
+                    }
+                    Diagnostic {
+                        title: "Inexhaustive patterns".into(),
+                        text,
+                        hint: None,
+                        level: Level::Error,
+                        location: Some(Location {
+                            src: src.clone(),
+                            path: path.to_path_buf(),
+                            label: Label {
+                                text: None,
+                                span: *location,
+                            },
+                            extra_labels: Vec::new(),
+                        }),
+                    }
+                }
+
+                TypeError::UnsupportedExpressionTarget {
                     location,
                     target: current_target,
-                    kind,
                 } => {
                     let text = wrap_format!(
-                        "This {} doesn't have an implementation for the {} target.",
-                        kind,
+                        "This value is not available as it is defined using externals, \
+and there is no implementation for the {} target.",
                         match current_target {
                             Target::Erlang => "Erlang",
                             Target::JavaScript => "JavaScript",
@@ -2283,6 +2379,80 @@ implementation but the function name `{function}` is not valid."
                     );
                     Diagnostic {
                         title: "Unsupported target".into(),
+                        text,
+                        hint: None,
+                        level: Level::Error,
+                        location: Some(Location {
+                            path: path.clone(),
+                            src: src.clone(),
+                            label: Label {
+                                text: None,
+                                span: *location,
+                            },
+                            extra_labels: vec![],
+                        }),
+                    }
+                }
+
+                TypeError::UnsupportedPublicFunctionTarget {
+                    location,
+                    name,
+                    target,
+                } => {
+                    let target = match target {
+                        Target::Erlang => "Erlang",
+                        Target::JavaScript => "JavaScript",
+                    };
+                    let text = wrap_format!(
+                        "The `{name}` function is public but doesn't have an \
+implementation for the {target} target. All public functions of a package \
+must be able to compile for a module to be valid."
+                    );
+                    Diagnostic {
+                        title: "Unsupported target".into(),
+                        text,
+                        hint: None,
+                        level: Level::Error,
+                        location: Some(Location {
+                            path: path.clone(),
+                            src: src.clone(),
+                            label: Label {
+                                text: None,
+                                span: *location,
+                            },
+                            extra_labels: vec![],
+                        }),
+                    }
+                }
+
+                TypeError::UnusedTypeAliasParameter { location, name } => {
+                    let text = wrap_format!(
+                        "The type variable `{name}` is unused. It can be safely removed.",
+                    );
+                    Diagnostic {
+                        title: "Unused type parameter".into(),
+                        text,
+                        hint: None,
+                        level: Level::Error,
+                        location: Some(Location {
+                            path: path.clone(),
+                            src: src.clone(),
+                            label: Label {
+                                text: None,
+                                span: *location,
+                            },
+                            extra_labels: vec![],
+                        }),
+                    }
+                }
+
+                TypeError::DuplicateTypeParameter { location, name } => {
+                    let text = wrap_format!(
+                        "This definition has multiple type parameters named `{name}`.
+Rename or remove one of them.",
+                    );
+                    Diagnostic {
+                        title: "Duplicate type parameter".into(),
                         text,
                         hint: None,
                         level: Level::Error,

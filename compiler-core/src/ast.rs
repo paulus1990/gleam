@@ -12,7 +12,7 @@ pub use self::constant::{Constant, TypedConstant, UntypedConstant};
 
 use crate::analyse::Inferred;
 use crate::build::{Located, Target};
-use crate::type_::expression::SupportedTargets;
+use crate::type_::expression::Implementations;
 use crate::type_::{
     self, Deprecation, ModuleValueConstructor, PatternConstructor, Type, ValueConstructor,
 };
@@ -374,7 +374,7 @@ pub struct Function<T, Expr> {
     pub external_erlang: Option<(EcoString, EcoString)>,
     pub external_javascript: Option<(EcoString, EcoString)>,
     pub external_wasm: Option<(EcoString, EcoString)>,
-    pub supported_targets: SupportedTargets,
+    pub implementations: Implementations,
 }
 
 pub type TypedFunction = Function<Arc<Type>, TypedExpr>;
@@ -442,8 +442,8 @@ pub struct ModuleConstant<T, ConstantRecordTag> {
     pub annotation: Option<TypeAst>,
     pub value: Box<Constant<T, ConstantRecordTag>>,
     pub type_: T,
-    pub supported_targets: SupportedTargets,
     pub deprecation: Deprecation,
+    pub implementations: Implementations,
 }
 
 pub type UntypedCustomType = CustomType<()>;
@@ -1041,27 +1041,33 @@ impl<A, B> ClauseGuard<A, B> {
 
     pub fn precedence(&self) -> u8 {
         // Ensure that this matches the other precedence function for guards
+        match self.bin_op_name() {
+            Some(name) => name.precedence(),
+            None => u8::MAX,
+        }
+    }
+
+    pub fn bin_op_name(&self) -> Option<BinOp> {
         match self {
-            ClauseGuard::Or { .. } => 1,
-            ClauseGuard::And { .. } => 2,
-
-            ClauseGuard::Equals { .. } | ClauseGuard::NotEquals { .. } => 3,
-
-            ClauseGuard::GtInt { .. }
-            | ClauseGuard::GtEqInt { .. }
-            | ClauseGuard::LtInt { .. }
-            | ClauseGuard::LtEqInt { .. }
-            | ClauseGuard::GtFloat { .. }
-            | ClauseGuard::GtEqFloat { .. }
-            | ClauseGuard::LtFloat { .. }
-            | ClauseGuard::LtEqFloat { .. } => 4,
+            ClauseGuard::Or { .. } => Some(BinOp::Or),
+            ClauseGuard::And { .. } => Some(BinOp::And),
+            ClauseGuard::Equals { .. } => Some(BinOp::Eq),
+            ClauseGuard::NotEquals { .. } => Some(BinOp::NotEq),
+            ClauseGuard::GtInt { .. } => Some(BinOp::GtInt),
+            ClauseGuard::GtEqInt { .. } => Some(BinOp::GtEqInt),
+            ClauseGuard::LtInt { .. } => Some(BinOp::LtInt),
+            ClauseGuard::LtEqInt { .. } => Some(BinOp::LtEqInt),
+            ClauseGuard::GtFloat { .. } => Some(BinOp::GtFloat),
+            ClauseGuard::GtEqFloat { .. } => Some(BinOp::GtEqFloat),
+            ClauseGuard::LtFloat { .. } => Some(BinOp::LtFloat),
+            ClauseGuard::LtEqFloat { .. } => Some(BinOp::LtEqFloat),
 
             ClauseGuard::Constant(_)
             | ClauseGuard::Var { .. }
             | ClauseGuard::Not { .. }
             | ClauseGuard::TupleIndex { .. }
             | ClauseGuard::FieldAccess { .. }
-            | ClauseGuard::ModuleSelect { .. } => 5,
+            | ClauseGuard::ModuleSelect { .. } => None,
         }
     }
 }
@@ -1375,6 +1381,14 @@ impl AssignmentKind {
             AssignmentKind::Let => true,
             AssignmentKind::Assert => false,
         }
+    }
+
+    /// Returns `true` if the assignment kind is [`Assert`].
+    ///
+    /// [`Assert`]: AssignmentKind::Assert
+    #[must_use]
+    pub fn is_assert(&self) -> bool {
+        matches!(self, Self::Assert)
     }
 }
 

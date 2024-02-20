@@ -528,11 +528,12 @@ impl<'comments> Formatter<'comments> {
         let signature = match &function.return_annotation {
             Some(anno) => signature.append(" -> ").append(self.type_ast(anno)),
             None => signature,
-        };
+        }
+        .group();
 
         let body = &function.body;
         if body.len() == 1 && body.first().is_placeholder() {
-            return attributes.append(signature.group());
+            return attributes.append(signature);
         }
 
         let head = attributes.append(signature);
@@ -548,7 +549,6 @@ impl<'comments> Formatter<'comments> {
 
         // Stick it all together
         head.append(" {")
-            .group()
             .append(line().append(body).nest(INDENT).group())
             .append(line())
             .append("}")
@@ -560,7 +560,24 @@ impl<'comments> Formatter<'comments> {
         return_annotation: Option<&'a TypeAst>,
         body: &'a Vec1<UntypedStatement>,
     ) -> Document<'a> {
-        let args = wrap_args(args.iter().map(|e| self.fn_arg(e))).group();
+        let args = wrap_args(args.iter().map(|e| self.fn_arg(e)))
+            .group()
+            .next_break_fits(NextBreakFitsMode::Disabled);
+        //   ^^^ We add this so that when an expression function is passed as
+        //       the last argument of a function and it goes over the line
+        //       limit with just its arguments we don't get some strange
+        //       splitting.
+        //       See https://github.com/gleam-lang/gleam/issues/2571
+        //
+        // There's many ways we could be smarter than this. For example:
+        //  - still split the arguments like it did in the example shown in the
+        //    issue if the expr_fn has more than one argument
+        //  - make sure that an anonymous function whose body is made up of a
+        //    single expression doesn't get split (I think that could boil down
+        //    to wrapping the body with a `next_break_fits(Disabled)`)
+        //
+        // These are some of the ways we could tweak the look of expression
+        // functions in the future if people are not satisfied with it.
         let body = self.statements(body);
         let header = "fn".to_doc().append(args);
 
@@ -886,16 +903,32 @@ impl<'comments> Formatter<'comments> {
             | UntypedExpr::NegateInt { .. } => self.expr(fun),
         };
 
+        let arity = args.len();
         self.append_inlinable_wrapped_args(
             expr,
             args,
             |arg| &arg.value,
-            |self_, arg| self_.call_arg(arg),
+            |self_, arg| self_.call_arg(arg, arity),
         )
     }
 
     fn tuple<'a>(&mut self, elements: &'a [UntypedExpr]) -> Document<'a> {
-        self.append_inlinable_wrapped_args("#".to_doc(), elements, |e| e, |self_, e| self_.expr(e))
+        self.append_inlinable_wrapped_args(
+            "#".to_doc(),
+            elements,
+            |e| e,
+            |self_, e| {
+                // If there's more than one item in the tuple and there's a
+                // pipeline or long binary chain, we want to indent those to
+                // make it easier to tell where one item ends and the other
+                // starts.
+                if elements.len() > 1 && (e.is_binop() || e.is_pipeline()) {
+                    self_.expr(e).group().nest(INDENT)
+                } else {
+                    self_.expr(e).group()
+                }
+            },
+        )
     }
 
     // Appends to the given docs a comma-separated list of documents wrapped by
@@ -992,19 +1025,19 @@ impl<'comments> Formatter<'comments> {
         left: &'a UntypedExpr,
         right: &'a UntypedExpr,
     ) -> Document<'a> {
-        self.binop_side(name, left)
+        self.bin_op_side(name, left)
             .append(break_("", " "))
             .append(name)
             .append(" ")
-            .append(self.binop_side(name, right))
+            .append(self.bin_op_side(name, right))
     }
 
-    fn binop_side<'a>(&mut self, operator: &'a BinOp, side: &'a UntypedExpr) -> Document<'a> {
+    fn bin_op_side<'a>(&mut self, operator: &'a BinOp, side: &'a UntypedExpr) -> Document<'a> {
         let side_doc = match side {
             UntypedExpr::String { value, .. } => self.bin_op_string(value),
             _ => self.expr(side),
         };
-        match side.binop_name() {
+        match side.bin_op_name() {
             // In case the other side is a binary operation as well and it can
             // be grouped together with the current binary operation, the two
             // docs are simply concatenated, so that they will end up in the
@@ -1018,7 +1051,7 @@ impl<'comments> Formatter<'comments> {
             _ => self.operator_side(
                 side_doc.group(),
                 operator.precedence(),
-                side.binop_precedence(),
+                side.bin_op_precedence(),
             ),
         }
     }
@@ -1034,7 +1067,7 @@ impl<'comments> Formatter<'comments> {
     fn pipeline<'a>(&mut self, expressions: &'a Vec1<UntypedExpr>) -> Document<'a> {
         let mut docs = Vec::with_capacity(expressions.len() * 3);
         let first = expressions.first();
-        let first_precedence = first.binop_precedence();
+        let first_precedence = first.bin_op_precedence();
         let first = self.expr(first).group();
         docs.push(self.operator_side(first, 5, first_precedence));
 
@@ -1059,7 +1092,7 @@ impl<'comments> Formatter<'comments> {
             };
             docs.push(line());
             docs.push(commented("|> ".to_doc(), comments));
-            docs.push(self.operator_side(doc, 4, expr.binop_precedence()));
+            docs.push(self.operator_side(doc, 4, expr.bin_op_precedence()));
         }
 
         docs.to_doc().force_break()
@@ -1082,6 +1115,7 @@ impl<'comments> Formatter<'comments> {
                 ..
             }) if name == CAPTURE_VARIABLE
         );
+        let arity = args.len();
 
         if hole_in_first_position && args.len() == 1 {
             // x |> fun(_)
@@ -1089,11 +1123,11 @@ impl<'comments> Formatter<'comments> {
         } else if hole_in_first_position {
             // x |> fun(_, 2, 3)
             self.expr(fun)
-                .append(wrap_args(args.iter().skip(1).map(|a| self.call_arg(a))).group())
+                .append(wrap_args(args.iter().skip(1).map(|a| self.call_arg(a, arity))).group())
         } else {
             // x |> fun(1, _, 3)
             self.expr(fun)
-                .append(wrap_args(args.iter().map(|a| self.call_arg(a))).group())
+                .append(wrap_args(args.iter().map(|a| self.call_arg(a, arity))).group())
         }
     }
 
@@ -1108,19 +1142,24 @@ impl<'comments> Formatter<'comments> {
                 fun,
                 arguments: args,
                 ..
-            })) => match args.as_slice() {
-                [first, second] if is_breakable_expr(&second.value) && first.is_capture_hole() => {
-                    self.expr(fun)
-                        .append("(_, ")
-                        .append(self.call_arg(second))
-                        .append(")")
-                        .group()
-                }
+            })) => {
+                let arity = args.len();
+                match args.as_slice() {
+                    [first, second]
+                        if is_breakable_expr(&second.value) && first.is_capture_hole() =>
+                    {
+                        self.expr(fun)
+                            .append("(_, ")
+                            .append(self.call_arg(second, arity))
+                            .append(")")
+                            .group()
+                    }
 
-                _ => self
-                    .expr(fun)
-                    .append(wrap_args(args.iter().map(|a| self.call_arg(a))).group()),
-            },
+                    _ => self
+                        .expr(fun)
+                        .append(wrap_args(args.iter().map(|a| self.call_arg(a, arity))).group()),
+                }
+            }
 
             // The body of a capture being not a fn shouldn't be possible...
             _ => panic!("Function capture body found not to be a call in the formatter"),
@@ -1246,20 +1285,32 @@ impl<'comments> Formatter<'comments> {
     }
 
     // Will always print the types, even if they were implicit in the original source
-    pub fn docs_fn_args<'a>(
+    fn docs_fn_args<'a>(
         &mut self,
         args: &'a [TypedArg],
         printer: &mut type_::pretty::Printer,
     ) -> Document<'a> {
         wrap_args(args.iter().map(|arg| {
-            arg.names
-                .to_doc()
+            self.docs_fn_arg_name(arg)
                 .append(": ".to_doc().append(printer.print(&arg.type_)))
                 .group()
         }))
     }
 
-    fn call_arg<'a>(&mut self, arg: &'a CallArg<UntypedExpr>) -> Document<'a> {
+    fn docs_fn_arg_name<'a>(&mut self, arg: &'a TypedArg) -> Document<'a> {
+        match &arg.names {
+            ArgNames::Named { name } => name.to_doc(),
+            ArgNames::NamedLabelled { label, name } => docvec![label, " ", name],
+            // We remove the underscore from discarded function arguments since we don't want to
+            // expose this kind of detail: https://github.com/gleam-lang/gleam/issues/2561
+            ArgNames::Discard { name } => name.strip_prefix('_').unwrap_or(name).to_doc(),
+            ArgNames::LabelledDiscard { label, name } => {
+                docvec![label, " ", name.strip_prefix('_').unwrap_or(name).to_doc()]
+            }
+        }
+    }
+
+    fn call_arg<'a>(&mut self, arg: &'a CallArg<UntypedExpr>, arity: usize) -> Document<'a> {
         match &arg.label {
             Some(s) => commented(
                 s.to_doc().append(": "),
@@ -1267,10 +1318,17 @@ impl<'comments> Formatter<'comments> {
             ),
             None => nil(),
         }
-        .append(match &arg.value {
-            UntypedExpr::BinOp { .. } => self.expr(&arg.value).group().nest(INDENT),
-            _ => self.expr(&arg.value).group(),
-        })
+        .append(
+            // If there's more than one item in the tuple and there's a
+            // pipeline or long binary chain, we want to indent those to
+            // make it easier to tell where one item ends and the other
+            // starts.
+            if arity > 1 && (arg.value.is_binop() || arg.value.is_pipeline()) {
+                self.expr(&arg.value).group().nest(INDENT)
+            } else {
+                self.expr(&arg.value).group()
+            },
+        )
     }
 
     fn record_update_arg<'a>(&mut self, arg: &'a UntypedRecordUpdateArg) -> Document<'a> {
@@ -1334,10 +1392,17 @@ impl<'comments> Formatter<'comments> {
 
         let clause_doc = match &clause.guard {
             None => clause_doc,
-            Some(guard) => clause_doc.append(" if ").append(self.clause_guard(guard)),
+            Some(guard) => clause_doc
+                .append(break_("", " "))
+                .append("if ")
+                .append(self.clause_guard(guard).group())
+                .nest(INDENT),
         };
 
-        let clause_doc = commented(clause_doc, comments);
+        let clause_doc = match printed_comments(comments, false) {
+            Some(comments) => comments.append(line()).append(clause_doc),
+            None => clause_doc,
+        };
 
         if index == 0 {
             clause_doc
@@ -1346,7 +1411,12 @@ impl<'comments> Formatter<'comments> {
         } else {
             lines(1).append(clause_doc)
         }
-        .append(" ->")
+        .append(match &clause.guard {
+            None => " ".to_doc(),
+            Some(_) => break_("", " "),
+        })
+        .group()
+        .append("->")
         .append(self.case_clause_value(&clause.then))
     }
 
@@ -1367,8 +1437,28 @@ impl<'comments> Formatter<'comments> {
         } else {
             break_(",", ", ")
         };
-        let elements = join(elements.iter().map(|e| self.expr(e).group()), comma)
-            .next_break_fits(NextBreakFitsMode::Disabled);
+
+        let list_size = elements.len()
+            + match tail {
+                Some(_) => 1,
+                None => 0,
+            };
+
+        let elements = join(
+            elements.iter().map(|e|
+                // If there's more than one item in the tuple and there's a
+                // pipeline or long binary chain, we want to indent those to
+                // make it easier to tell where one item ends and the other
+                // starts.
+                if list_size > 1 && (e.is_binop() || e.is_pipeline()) {
+                    self.expr(e).group().nest(INDENT)
+                } else {
+                    self.expr(e).group()
+                }
+            ),
+            comma,
+        )
+        .next_break_fits(NextBreakFitsMode::Disabled);
 
         let doc = break_("[", "[").append(elements);
 
@@ -1493,60 +1583,82 @@ impl<'comments> Formatter<'comments> {
 
     pub fn clause_guard_bin_op<'a>(
         &mut self,
-        name: &'a str,
-        name_precedence: u8,
+        name: &'a BinOp,
         left: &'a UntypedClauseGuard,
         right: &'a UntypedClauseGuard,
     ) -> Document<'a> {
-        let left_precedence = left.precedence();
-        let right_precedence = right.precedence();
-        let left = self.clause_guard(left);
-        let right = self.clause_guard(right);
-        self.operator_side(left, name_precedence, left_precedence)
-            .append(name)
-            .append(self.operator_side(right, name_precedence, right_precedence - 1))
+        self.clause_guard_bin_op_side(name, left, left.precedence())
+            .append(break_("", " "))
+            .append(name.to_doc())
+            .append(" ")
+            .append(self.clause_guard_bin_op_side(name, right, right.precedence() - 1))
+    }
+
+    fn clause_guard_bin_op_side<'a>(
+        &mut self,
+        name: &BinOp,
+        side: &'a UntypedClauseGuard,
+        // As opposed to `bin_op_side`, here we take the side precedence as an
+        // argument instead of computing it ourselves. That's because
+        // `clause_guard_bin_op` will reduce the precedence of any right side to
+        // make sure the formatter doesn't remove any needed curly bracket.
+        side_precedence: u8,
+    ) -> Document<'a> {
+        let side_doc = self.clause_guard(side);
+        match side.bin_op_name() {
+            // In case the other side is a binary operation as well and it can
+            // be grouped together with the current binary operation, the two
+            // docs are simply concatenated, so that they will end up in the
+            // same group and the formatter will try to keep those on a single
+            // line.
+            Some(side_name) if side_name.can_be_grouped_with(name) => {
+                self.operator_side(side_doc, name.precedence(), side_precedence)
+            }
+            // In case the binary operations cannot be grouped together the
+            // other side is treated as a group on its own so that it can be
+            // broken independently of other pieces of the binary operations
+            // chain.
+            _ => self.operator_side(side_doc.group(), name.precedence(), side_precedence),
+        }
     }
 
     fn clause_guard<'a>(&mut self, clause_guard: &'a UntypedClauseGuard) -> Document<'a> {
         match clause_guard {
             ClauseGuard::And { left, right, .. } => {
-                self.clause_guard_bin_op(" && ", clause_guard.precedence(), left, right)
+                self.clause_guard_bin_op(&BinOp::And, left, right)
             }
             ClauseGuard::Or { left, right, .. } => {
-                self.clause_guard_bin_op(" || ", clause_guard.precedence(), left, right)
+                self.clause_guard_bin_op(&BinOp::Or, left, right)
             }
             ClauseGuard::Equals { left, right, .. } => {
-                self.clause_guard_bin_op(" == ", clause_guard.precedence(), left, right)
+                self.clause_guard_bin_op(&BinOp::Eq, left, right)
             }
-
             ClauseGuard::NotEquals { left, right, .. } => {
-                self.clause_guard_bin_op(" != ", clause_guard.precedence(), left, right)
+                self.clause_guard_bin_op(&BinOp::NotEq, left, right)
             }
             ClauseGuard::GtInt { left, right, .. } => {
-                self.clause_guard_bin_op(" > ", clause_guard.precedence(), left, right)
+                self.clause_guard_bin_op(&BinOp::GtInt, left, right)
             }
-
             ClauseGuard::GtEqInt { left, right, .. } => {
-                self.clause_guard_bin_op(" >= ", clause_guard.precedence(), left, right)
+                self.clause_guard_bin_op(&BinOp::GtEqInt, left, right)
             }
             ClauseGuard::LtInt { left, right, .. } => {
-                self.clause_guard_bin_op(" < ", clause_guard.precedence(), left, right)
+                self.clause_guard_bin_op(&BinOp::LtInt, left, right)
             }
-
             ClauseGuard::LtEqInt { left, right, .. } => {
-                self.clause_guard_bin_op(" <= ", clause_guard.precedence(), left, right)
+                self.clause_guard_bin_op(&BinOp::LtEqInt, left, right)
             }
             ClauseGuard::GtFloat { left, right, .. } => {
-                self.clause_guard_bin_op(" >. ", clause_guard.precedence(), left, right)
+                self.clause_guard_bin_op(&BinOp::GtFloat, left, right)
             }
             ClauseGuard::GtEqFloat { left, right, .. } => {
-                self.clause_guard_bin_op(" >=. ", clause_guard.precedence(), left, right)
+                self.clause_guard_bin_op(&BinOp::GtEqFloat, left, right)
             }
             ClauseGuard::LtFloat { left, right, .. } => {
-                self.clause_guard_bin_op(" <. ", clause_guard.precedence(), left, right)
+                self.clause_guard_bin_op(&BinOp::LtFloat, left, right)
             }
             ClauseGuard::LtEqFloat { left, right, .. } => {
-                self.clause_guard_bin_op(" <=. ", clause_guard.precedence(), left, right)
+                self.clause_guard_bin_op(&BinOp::LtEqFloat, left, right)
             }
 
             ClauseGuard::Var { name, .. } => name.to_doc(),

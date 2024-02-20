@@ -1,6 +1,7 @@
 use camino::{Utf8Path, Utf8PathBuf};
 use flate2::{write::GzEncoder, Compression};
 use gleam_core::{
+    analyse::TargetSupport,
     build::{Codegen, Mode, Options, Package, Target},
     config::{PackageConfig, SpdxLicense},
     hex, paths,
@@ -185,6 +186,7 @@ fn do_build_hex_tarball(paths: &ProjectPaths, config: &PackageConfig) -> Result<
     // Build the project to check that it is valid
     let built = build::main(
         Options {
+            root_target_support: TargetSupport::Enforced,
             warnings_as_errors: false,
             mode: Mode::Prod,
             target: Some(target),
@@ -193,6 +195,21 @@ fn do_build_hex_tarball(paths: &ProjectPaths, config: &PackageConfig) -> Result<
         build::download_dependencies()?,
     )?;
 
+    // If any of the modules in the package contain a todo then refuse to
+    // publish as the package is not yet finished.
+    let unfinished = built
+        .root_package
+        .modules
+        .iter()
+        .filter(|module| module.ast.type_info.contains_todo)
+        .map(|module| module.name.clone())
+        .sorted()
+        .collect_vec();
+    if !unfinished.is_empty() {
+        return Err(Error::CannotPublishTodo { unfinished });
+    }
+
+    // Collect all the files we want to include in the tarball
     let generated_files = match target {
         Target::Erlang => generated_erlang_files(paths, &built.root_package)?,
         Target::JavaScript => vec![],

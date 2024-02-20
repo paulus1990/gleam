@@ -16,13 +16,13 @@ use crate::{
         self,
         environment::*,
         error::{convert_unify_error, Error, MissingAnnotation},
-        expression::{ExprTyper, SupportedTargets},
+        expression::{ExprTyper, Implementations},
         fields::{FieldMap, FieldMapBuilder},
         hydrator::Hydrator,
         prelude::*,
         AccessorsMap, Deprecation, ModuleInterface, PatternConstructor, RecordAccessor, Type,
-        TypeConstructor, TypeValueConstructor, TypeValueConstructorParameter, ValueConstructor,
-        ValueConstructorVariant,
+        TypeConstructor, TypeValueConstructor, TypeValueConstructorField, TypeVariantConstructors,
+        ValueConstructor, ValueConstructorVariant,
     },
     uid::UniqueIdGenerator,
     warning::TypeWarningEmitter,
@@ -76,10 +76,34 @@ impl Inferred<PatternConstructor> {
     }
 }
 
+/// How the compiler should treat target support.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TargetSupport {
+    /// Target support is enfored, meaning if a function is found to not have an implementation for
+    /// the current target then an error is emitted and compilation halts.
+    ///
+    /// This is used when compiling the root package, with the exception of when using
+    /// `gleam run --module $module` to run a module from a dependency package, in which case we do
+    /// not want to error as the root package code isn't going to be run.
     Enforced,
+    /// Target support is enfored, meaning if a function is found to not have an implementation for
+    /// the current target it will continue onwards and not generate any code for this function.
+    ///
+    /// This is used when compiling dependencies.
     NotEnforced,
+}
+
+impl TargetSupport {
+    /// Returns `true` if the target support is [`Enforced`].
+    ///
+    /// [`Enforced`]: TargetSupport::Enforced
+    #[must_use]
+    pub fn is_enforced(&self) -> bool {
+        match self {
+            Self::Enforced => true,
+            Self::NotEnforced => false,
+        }
+    }
 }
 
 // TODO: This takes too many arguments.
@@ -102,6 +126,7 @@ pub fn infer_module<A>(
     let documentation = std::mem::take(&mut module.documentation);
     let env = Environment::new(
         ids.clone(),
+        package.clone(),
         name.clone(),
         target,
         modules,
@@ -229,6 +254,7 @@ pub fn infer_module<A>(
         module_types: types,
         module_types_constructors: types_constructors,
         module_values: values,
+        todo_encountered: contains_todo,
         accessors,
         ..
     } = env;
@@ -244,8 +270,9 @@ pub fn infer_module<A>(
             values,
             accessors,
             origin,
-            unused_imports,
             package: package.clone(),
+            unused_imports,
+            contains_todo,
         },
     })
 }
@@ -280,11 +307,18 @@ fn register_type_alias(
         deprecation,
         ..
     } = t;
+
+    // A type alias must not have the same name as any other type in the module.
     assert_unique_type_name(names, name, *location)?;
+
+    // Use the hydrator to convert the AST into a type, erroring if the AST was invalid
+    // in some fashion.
     let mut hydrator = Hydrator::new();
     let parameters = make_type_vars(args, location, &mut hydrator, environment)?;
     hydrator.disallow_new_type_variables();
     let typ = hydrator.type_from_ast(resolved_type, environment)?;
+
+    // Insert the alias so that it can be used by other code.
     environment.insert_type_constructor(
         name.clone(),
         TypeConstructor {
@@ -296,6 +330,15 @@ fn register_type_alias(
             deprecation: deprecation.clone(),
         },
     )?;
+
+    if let Some(name) = hydrator.unused_type_variables().next() {
+        return Err(Error::UnusedTypeAliasParameter {
+            location: *location,
+            name: name.clone(),
+        });
+    }
+
+    // Register the type for detection of dead code.
     if !public {
         environment.init_usage(name.clone(), EntityKind::PrivateType, *location);
     };
@@ -325,6 +368,7 @@ fn register_types_from_custom_type<'a>(
 
     let typ = Arc::new(Type::Named {
         public: *public,
+        package: environment.current_package.clone(),
         module: module.to_owned(),
         name: name.clone(),
         args: parameters.clone(),
@@ -392,24 +436,14 @@ fn register_values_from_custom_type(
 
         let mut field_map = FieldMap::new(constructor.arguments.len() as u32);
         let mut args_types = Vec::with_capacity(constructor.arguments.len());
-        let mut parameters = Vec::with_capacity(constructor.arguments.len());
+        let mut fields = Vec::with_capacity(constructor.arguments.len());
 
         for (i, RecordConstructorArg { label, ast, .. }) in constructor.arguments.iter().enumerate()
         {
             // Build a type from the annotation AST
             let t = hydrator.type_from_ast(ast, environment)?;
 
-            // Determine the parameter index if this is a generic type
-            let generic_type_parameter_index = match &ast {
-                TypeAst::Var(TypeAstVar { name, .. }) => {
-                    type_parameters.iter().position(|p| p == name)
-                }
-                _ => None,
-            };
-            parameters.push(TypeValueConstructorParameter {
-                type_: t.clone(),
-                generic_type_parameter_index,
-            });
+            fields.push(TypeValueConstructorField { type_: t.clone() });
 
             // Register the type for this parameter
             args_types.push(t);
@@ -461,7 +495,7 @@ fn register_values_from_custom_type(
 
         constructors_data.push(TypeValueConstructor {
             name: constructor.name.clone(),
-            parameters,
+            parameters: fields,
         });
         environment.insert_variable(
             constructor.name.clone(),
@@ -472,7 +506,11 @@ fn register_values_from_custom_type(
         );
     }
 
-    environment.insert_type_to_constructors(name.clone(), constructors_data);
+    // Now record the constructors for the type.
+    environment.insert_type_to_constructors(
+        name.clone(),
+        TypeVariantConstructors::new(constructors_data, type_parameters, hydrator),
+    );
 
     Ok(())
 }
@@ -498,7 +536,7 @@ fn register_value_from_function(
         end_position: _,
         body: _,
         return_type: _,
-        supported_targets,
+        implementations,
     } = f;
     assert_unique_name(names, name, *location)?;
     assert_valid_javascript_external(name, external_javascript.as_ref(), *location)?;
@@ -532,7 +570,7 @@ fn register_value_from_function(
         module: impl_module,
         arity: args.len(),
         location: *location,
-        supported_targets: *supported_targets,
+        implementations: *implementations,
     };
     environment.insert_variable(name.clone(), variant, typ, *public, deprecation.clone());
     if !public {
@@ -598,8 +636,9 @@ fn infer_function(
         external_javascript,
         external_wasm,
         return_type: (),
-        supported_targets: _,
+        implementations: _,
     } = f;
+    let target = environment.target;
     let preregistered_fn = environment
         .get_variable(&name)
         .expect("Could not find preregistered type for function");
@@ -609,10 +648,8 @@ fn infer_function(
         .fn_types()
         .expect("Preregistered type for fn was not a fn");
 
-    let is_placeholder = is_placeholder(&body);
     // Find the external implementation for the current target, if one has been given.
-    let external =
-        target_function_implementation(environment.target, &external_erlang, &external_javascript, &external_wasm);
+    let external = target_function_implementation(target, &external_erlang, &external_javascript, &external_wasm);
     let (impl_module, impl_function) = implementation_names(external, module_name, &name);
 
     // The function must have at least one implementation somewhere.
@@ -626,16 +663,20 @@ fn infer_function(
         ensure_annotations_present(&arguments, return_annotation.as_ref(), location)?;
     }
 
-    let external_targets = external_supported_targets(&external_erlang, &external_javascript);
+    let external_implementations = Implementations {
+        gleam: false,
+        uses_erlang_externals: external_erlang.is_some(),
+        uses_javascript_externals: external_javascript.is_some(),
+    };
 
     // Infer the type using the preregistered args + return types as a starting point
-    let (type_, args, body, mut supported_targets) = environment.in_new_scope(|environment| {
+    let (type_, args, body, implementations) = environment.in_new_scope(|environment| {
         let args_types = arguments
             .into_iter()
             .zip(&args_types)
             .map(|(a, t)| a.set_type(t.clone()))
             .collect();
-        let mut expr_typer = ExprTyper::new(environment, external_targets);
+        let mut expr_typer = ExprTyper::new(environment, external_implementations);
         expr_typer.hydrator = hydrators
             .remove(&name)
             .expect("Could not find hydrator for fn");
@@ -644,19 +685,22 @@ fn infer_function(
             expr_typer.infer_fn_with_known_types(args_types, body, Some(return_type))?;
         let args_types = args.iter().map(|a| a.type_.clone()).collect();
         let typ = fn_(args_types, body.last().type_());
-        Ok((typ, args, body, expr_typer.supported_targets))
+        Ok((typ, args, body, expr_typer.implementations))
     })?;
-
-    if is_placeholder {
-        // If the function has an empty body we are only going to consider as
-        // supported targets the ones that have an external implementation.
-        supported_targets = external_targets;
-    } else {
-        supported_targets = supported_targets.merge(external_targets);
-    }
 
     // Assert that the inferred type matches the type of any recursive call
     unify(preregistered_type, type_.clone()).map_err(|e| convert_unify_error(e, location))?;
+
+    // Ensure that the current target has an implementation for the function.
+    // This is done at the expression level while inferring the function body, but we do it again
+    // here as externally implemented functions may not have a Gleam body.
+    if public && environment.target_support.is_enforced() && !implementations.supports(target) {
+        return Err(Error::UnsupportedPublicFunctionTarget {
+            name: name.clone(),
+            target,
+            location,
+        });
+    }
 
     let variant = ValueConstructorVariant::ModuleFn {
         documentation: doc.clone(),
@@ -665,7 +709,7 @@ fn infer_function(
         module: impl_module,
         arity: args.len(),
         location,
-        supported_targets,
+        implementations,
     };
 
     environment.insert_variable(
@@ -692,20 +736,8 @@ fn infer_function(
         external_erlang,
         external_javascript,
         external_wasm,
-        supported_targets,
+        implementations,
     }))
-}
-
-fn external_supported_targets(
-    external_erlang: &Option<(EcoString, EcoString)>,
-    external_javascript: &Option<(EcoString, EcoString)>,
-) -> SupportedTargets {
-    match (external_erlang, external_javascript) {
-        (Some(_), Some(_)) => SupportedTargets::all(),
-        (Some(_), None) => SupportedTargets::erlang(),
-        (None, Some(_)) => SupportedTargets::javascript(),
-        (None, None) => SupportedTargets::none(),
-    }
 }
 
 /// Returns the the module name and function name of the implementation of a
@@ -736,10 +768,6 @@ fn target_function_implementation<'a>(
     }
 }
 
-fn is_placeholder(body: &Vec1<UntypedStatement>) -> bool {
-    body.first().is_placeholder()
-}
-
 fn ensure_function_has_an_implementation(
     body: &Vec1<UntypedStatement>,
     external_erlang: &Option<(EcoString, EcoString)>,
@@ -747,7 +775,7 @@ fn ensure_function_has_an_implementation(
     location: SrcSpan,
 ) -> Result<(), Error> {
     match (external_erlang, external_javascript) {
-        (None, None) if is_placeholder(body) => Err(Error::NoImplementation { location }),
+        (None, None) if body.first().is_placeholder() => Err(Error::NoImplementation { location }),
         _ => Ok(()),
     }
 }
@@ -959,10 +987,17 @@ fn infer_module_constant(
         ..
     } = c;
 
-    let mut expr_typer = ExprTyper::new(environment, SupportedTargets::none());
+    let mut expr_typer = ExprTyper::new(
+        environment,
+        Implementations {
+            gleam: false,
+            uses_erlang_externals: false,
+            uses_javascript_externals: false,
+        },
+    );
     let typed_expr = expr_typer.infer_const(&annotation, *value)?;
     let type_ = typed_expr.type_();
-    let supported_targets = expr_typer.supported_targets;
+    let implementations = expr_typer.implementations;
 
     let variant = ValueConstructor {
         public,
@@ -972,7 +1007,7 @@ fn infer_module_constant(
             location,
             literal: typed_expr.clone(),
             module: module_name.clone(),
-            supported_targets,
+            implementations,
         },
         type_: type_.clone(),
     };
@@ -998,8 +1033,8 @@ fn infer_module_constant(
         public,
         value: Box::new(typed_expr),
         type_,
-        supported_targets,
         deprecation,
+        implementations,
     }))
 }
 
@@ -1080,8 +1115,8 @@ fn generalise_module_constant(
         public,
         value,
         type_,
-        supported_targets,
         deprecation,
+        implementations,
     } = constant;
     let typ = type_.clone();
     let type_ = type_::generalise(typ);
@@ -1090,7 +1125,7 @@ fn generalise_module_constant(
         location,
         literal: *value.clone(),
         module: module_name.clone(),
-        supported_targets,
+        implementations,
     };
     environment.insert_variable(
         name.clone(),
@@ -1118,8 +1153,8 @@ fn generalise_module_constant(
         public,
         value,
         type_,
-        supported_targets,
         deprecation,
+        implementations,
     })
 }
 
@@ -1142,7 +1177,7 @@ fn generalise_function(
         external_erlang,
         external_javascript,
         external_wasm,
-        supported_targets,
+        implementations,
     } = function;
 
     // Lookup the inferred function information
@@ -1166,7 +1201,7 @@ fn generalise_function(
         module: impl_module,
         arity: args.len(),
         location,
-        supported_targets,
+        implementations,
     };
     environment.insert_variable(
         name.clone(),
@@ -1199,7 +1234,7 @@ fn generalise_function(
         external_erlang,
         external_javascript,
         external_wasm,
-        supported_targets,
+        implementations,
     })
 }
 
@@ -1210,14 +1245,15 @@ fn make_type_vars(
     environment: &mut Environment<'_>,
 ) -> Result<Vec<Arc<Type>>, Error> {
     args.iter()
-        .map(|arg| {
-            TypeAst::Var(TypeAstVar {
-                location: *location,
-                name: arg.clone(),
+        .map(|name| {
+            hydrator.add_type_variable(name, environment).map_err(|()| {
+                Error::DuplicateTypeParameter {
+                    location: *location,
+                    name: name.clone(),
+                }
             })
         })
-        .map(|ast| hydrator.type_from_ast(&ast, environment))
-        .try_collect()
+        .collect::<Result<_, _>>()
 }
 
 fn assert_unique_type_name(
