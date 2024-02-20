@@ -204,7 +204,7 @@ enum WasmInstruction {
     LocalGet(WasmVar),
     LocalSet(WasmVar),
     // Const(WasmType, WasmVar),
-    Call(WasmVar),
+    Call{func: WasmVar, args: Vec<WasmInstruction>},
     Function(WasmFunction),
     I32Add,
     I32Sub,
@@ -218,7 +218,7 @@ impl Wasmable for WasmInstruction {
         match self {
             LocalGet(x) => { format!("local.get ${}", x.name).into() }
             LocalSet(x) => { format!("local.set ${}", x.name).into() }
-            Call(x) => { format!("call ${}", x.name).into() }
+            Call{func, args} => { format!("call ${}{}", func.name, args.iter().map(|x| format!(" ({})",x.to_wat())).reduce(|mut acc, x| {acc.push_str(&x);acc}).unwrap_or(String::from(""))).into() }
             WasmInstruction::Function(x) => { x.to_wat() }
             I32Add => { "i32.add".into() }
             I32Sub => { "i32.sub".into() }
@@ -371,7 +371,7 @@ impl WasmThing {
             self.type_section.borrow_mut().push(PlaceHolder("".into()));
         }
         self.type_section.borrow_mut()[type_section_idx] = WasmTypeSectionEntry::Struct(struct_def.clone());
-        dbg!(self.type_section.borrow());
+        // dbg!(self.type_section.borrow());
 
         let constructor_name = name;
         // constructor_name.push_str("_constructor"); // Oh the type and constructor same name hmmmmm else we dont know we call really
@@ -549,13 +549,14 @@ impl WasmThing {
                     todo!()
                 };
 
-                let call = Call(   //TODO tail call use instead? CallReturn :)
-                                   WasmVar {
-                                       name: fn_name.clone(),
-                                   }
-                );
-                instrs.push(call);
-                return (instrs, locals);
+                let call = Call {  //TODO tail call use instead? CallReturn :)
+                    func: WasmVar {
+                        name: fn_name.clone(),
+                    },
+                    args: instrs
+                };
+                // instrs.push(call);
+                return (vec![call], locals);
             }
             TypedExpr::RecordAccess { record, label, .. } => {
                 let mut instrs = Vec::new();
@@ -595,7 +596,7 @@ impl WasmThing {
                 let struct_var = match struct_var {
                     None => {
                         self.type_section.borrow_mut().push(PlaceHolder(record_type.clone()));
-                        dbg!(self.type_section.borrow());
+                        // dbg!(self.type_section.borrow());
                         WasmVar {
                             name: record_type.clone(),
                         }
@@ -653,7 +654,7 @@ impl WasmThing {
                         if idx == len {
                             self.type_section.borrow_mut().push(PlaceHolder(EcoString::from(x.clone())));
                         }
-                        dbg!(self.type_section.borrow());
+                        // dbg!(self.type_section.borrow());
 
                         let x = EcoString::from(x.clone());
 
@@ -722,14 +723,13 @@ fn wasm_2n() {
     let wat = w.to_wat();
     let mut file = File::create("letstry.wat").unwrap();
     let _ = file.write_all(wat.as_bytes());
-    insta::assert_snapshot!(wat);
 
-    let wasm = wat::parse_str(wat).unwrap();
+    let wasm = wat::parse_str(wat.clone()).unwrap();
 
     let mut file = File::create("letstry.wasm").unwrap();
     let _ = file.write_all(&wasm);
+    insta::assert_snapshot!(wat);
 }
-
 
 #[test]
 fn wasm_3nd() {
@@ -752,29 +752,30 @@ fn wasm_3nd() {
     let wat = w.to_wat();
     let mut file = File::create("letstry.wat").unwrap();
     let _ = file.write_all(wat.as_bytes());
-    insta::assert_snapshot!(wat);
 
-    let wasm = wat::parse_str(wat).unwrap();
+    let wasm = wat::parse_str(wat.clone()).unwrap();
 
     let mut file = File::create("letstry.wasm").unwrap();
     let _ = file.write_all(&wasm);
+
+    insta::assert_snapshot!(wat);
 }
 
 #[test]
 fn wasm_4nd() {
-    //TODO oh no also not det........ In the wasm case, both above seem fine each time, so the call? And the order of the gleam module matter?
     let gleam_module = trying_to_make_module(
         "
         pub fn add(x: Int, y: Int) -> Int {
-            internal_add(x,y)
+            internal_add(x+1,y)
           }
         fn internal_add(x: Int, y: Int) -> Int {
             x + y
         }
           ",
     );
-    // insta::assert_snapshot!(format!("{:?}",&gleam_module).as_str()); TODO aha! Not the order changes! So I have a Placeholer problem somewhere:P
-    // So walk back from snap shot diff... when failing and work back from there?
+
+    //TODO not the nicest wat with the x+1, still legal tho....
+
     let w = WasmThing {
         gleam_module,
         wasm_instructions: RefCell::new(vec![]),
@@ -786,12 +787,13 @@ fn wasm_4nd() {
     let wat = w.to_wat();
     let mut file = File::create("letstry.wat").unwrap();
     let _ = file.write_all(wat.as_bytes());
-    insta::assert_snapshot!(wat);
 
-    let wasm = wat::parse_str(wat).unwrap();
+    let wasm = wat::parse_str(wat.clone()).unwrap();
 
     let mut file = File::create("letstry.wasm").unwrap();
     let _ = file.write_all(&wasm);
+
+    insta::assert_snapshot!(wat);
 }
 
 #[test]
@@ -836,13 +838,13 @@ fn wasm_5nd() {
     let wat = w.to_wat();
     let mut file = File::create("letstry.wat").unwrap();
     let _ = file.write_all(wat.as_bytes());
-    insta::assert_snapshot!(wat);
 
-
-    let wasm = wat::parse_str(wat).unwrap();
+    let wasm = wat::parse_str(wat.clone()).unwrap();
 
     let mut file = File::create("letstry.wasm").unwrap();
     let _ = file.write_all(&wasm);
+
+    insta::assert_snapshot!(wat);
 //
 //
 //     //TODO: Uncaught (in promise) CompileError: wasm validation error: at offset 43: type mismatch: expression has type i64 but expected structref
@@ -927,12 +929,13 @@ type Kitten {Kitten(name: Int, age: Int, cuteness: Int) }
     let wat = w.to_wat();
     let mut file = File::create("letstry.wat").unwrap();
     let _ = file.write_all(wat.as_bytes());
-    insta::assert_snapshot!(wat);
 
-    let wasm = wat::parse_str(wat).unwrap();
+    let wasm = wat::parse_str(wat.clone()).unwrap();
 
     let mut file = File::create("letstry.wasm").unwrap();
     let _ = file.write_all(&wasm);
+
+    insta::assert_snapshot!(wat);
 }
 
 /// A code generator that creates a .erl Erlang module and record header files
