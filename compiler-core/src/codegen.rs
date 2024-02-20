@@ -156,7 +156,7 @@ impl Wasmable for WasmType {
 #[derive(Clone, Eq, PartialEq, Debug)]
 struct WasmVar {
     //TODO rename to WasmIndex?
-    idx: u32,
+    // idx: u32,
     name: EcoString,
 }
 
@@ -356,13 +356,13 @@ impl WasmThing {
             .map(|(i, arg)|
                 {
                     let name = arg.label.clone().unwrap_or(format!("{i}").into());
-                    (WasmVar { idx: i as u32, name }, self.transform_gleam_type(arg.type_.as_ref()))
+                    (WasmVar { name }, self.transform_gleam_type(arg.type_.as_ref()))
                 }
             )
             .collect();
 
         let struct_def = WasmStructDef {
-            info: WasmVar { idx: type_section_idx as u32, name: struct_name },
+            info: WasmVar { name: struct_name },
             fields: fields.clone(),
         };
 
@@ -381,7 +381,6 @@ impl WasmThing {
         let _ = self.functions_type_section_index.borrow_mut().insert(constructor_name.clone(), (constructor_idx as u32, fun_len as u32)); //TODO get or insert? Maybe used already? Then need place holder in two places :P
 
         let var = WasmVar {
-            idx: constructor_idx as u32,
             name: constructor_name,
         };
 
@@ -423,17 +422,17 @@ impl WasmThing {
         let fun_len = self.functions_type_section_index.borrow().len();
         let loc: (u32, u32) = *self.functions_type_section_index.borrow_mut().get(&name).unwrap_or(&(len as u32, fun_len as u32));
         let _ = self.functions_type_section_index.borrow_mut().insert(name.clone(), loc);
-        let wasm_var = WasmVar { idx: loc.0, name };
+        let wasm_var = WasmVar { name };
 
         let result_type = self.transform_gleam_type(gleam_function.return_type.as_ref());
         let mut arguments = Vec::new();
         let mut locals = Vec::new();
         let mut scope: HashMap<EcoString, usize> = HashMap::new();
-        for (i, param) in gleam_function.arguments.iter().enumerate() {
+        for param in &gleam_function.arguments {
             let name = param.names.get_variable_name().unwrap(); //TODO unwrap???
             let _ = scope.insert(name.clone(), scope.len());
             let type_ = self.transform_gleam_type(param.type_.as_ref());
-            arguments.push((WasmVar { idx: i as u32, name: name.clone() }, type_));
+            arguments.push((WasmVar { name: name.clone() }, type_));
         }
 
         let mut instructions = Vec::new();
@@ -463,7 +462,7 @@ impl WasmThing {
                 args: arguments,
                 def: func_def,
                 body: instructions,
-                locals: locals,
+                locals,
             }
         );
         self.wasm_instructions
@@ -490,10 +489,9 @@ impl WasmThing {
     fn transform_gleam_assignment(&self, gleam_assignment: &Assignment<Arc<Type>, TypedExpr>, scope: &mut HashMap<EcoString, usize>) -> (Vec<WasmInstruction>, Vec<(WasmVar, WasmType)>) {
         match &gleam_assignment.pattern {
             Pattern::Variable { name, type_, .. } => {
-                let idx = scope.len();
                 let _ = scope.insert(name.clone(), scope.len());
                 let locals = vec![(
-                    WasmVar { idx: idx as u32, name: name.clone() }, self.transform_gleam_type(type_),
+                    WasmVar { name: name.clone() }, self.transform_gleam_type(type_),
                 )];
                 let mut instrs = Vec::new();
                 let mut val = self.transform_gleam_expression(gleam_assignment.value.as_ref(), scope);
@@ -525,10 +523,7 @@ impl WasmThing {
                 locals.append(&mut rs.1);
             }
             TypedExpr::Var { name, .. } => {
-                let idx = scope
-                    .get(name.as_str())
-                    .expect("I expect all vars to be in the scope right now."); //TODO globals different... Need some logic here to decide the local/global get if necessary
-                return (vec![LocalGet(WasmVar { idx: *idx as u32, name: name.clone() })], vec![]);
+                return (vec![LocalGet(WasmVar { name: name.clone() })], vec![]);
             }
             TypedExpr::Int { value, .. } => {
                 //TODO type?
@@ -554,28 +549,15 @@ impl WasmThing {
                     todo!()
                 };
 
-                let pi = *self.functions_type_section_index.borrow().get(fn_name.as_str()).unwrap_or(&(u32::MAX, u32::MAX));
-                let fn_idx = match pi {
-                    (u32::MAX, u32::MAX) => {
-                        let len = self.type_section.borrow().len();
-                        let fun_len = self.functions_type_section_index.borrow().len();
-                        self.type_section.borrow_mut().push(PlaceHolder("".into()));
-                        let _ = self.functions_type_section_index.borrow_mut().insert(fn_name.clone(), (len as u32, fun_len as u32));
-                        dbg!(self.type_section.borrow());
-                        (len as u32, fun_len as u32)
-                    }
-                    i => { i }
-                };
                 let call = Call(   //TODO tail call use instead? CallReturn :)
                                    WasmVar {
-                                       idx: fn_idx.1,
                                        name: fn_name.clone(),
                                    }
                 );
                 instrs.push(call);
                 return (instrs, locals);
             }
-            TypedExpr::RecordAccess { index, record, label, .. } => {
+            TypedExpr::RecordAccess { record, label, .. } => {
                 let mut instrs = Vec::new();
                 let record_name = match record.as_ref() {
                     TypedExpr::Var { name, .. } => {
@@ -583,8 +565,7 @@ impl WasmThing {
                     }
                     _ => { todo!() }
                 };
-                let r_idx = *scope.get(record_name).unwrap() as u32;
-                instrs.push(LocalGet(WasmVar { idx: r_idx, name: record_name.clone() }));
+                instrs.push(LocalGet(WasmVar { name: record_name.clone() }));
                 let mut record_type = record.type_().named_type_name().unwrap().1; //TODO this unwrap!
                 record_type.push_str("_struct");
                 let struct_var = self.type_section.borrow().iter().enumerate().filter_map(|(i, x)|
@@ -593,7 +574,6 @@ impl WasmThing {
                             PlaceHolder(name) => {
                                 if &record_type == name {
                                     Some(WasmVar {
-                                        idx: i as u32,
                                         name: record_type.clone(),
                                     })
                                 } else {
@@ -614,11 +594,9 @@ impl WasmThing {
 
                 let struct_var = match struct_var {
                     None => {
-                        let len = self.type_section.borrow().len();
                         self.type_section.borrow_mut().push(PlaceHolder(record_type.clone()));
                         dbg!(self.type_section.borrow());
                         WasmVar {
-                            idx: len as u32,
                             name: record_type.clone(),
                         }
                     }
@@ -626,7 +604,6 @@ impl WasmThing {
                 };
 
                 let field_var = WasmVar {
-                    idx: *index as u32,
                     name: label.clone(),
                 };
 
@@ -682,7 +659,6 @@ impl WasmThing {
 
                         ConcreteRef(
                             WasmVar {
-                                idx: idx as u32,
                                 name: x,
                             })
                     },
