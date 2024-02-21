@@ -83,8 +83,6 @@ camino = { version = "1.1.6", features = ["serde1"] }
 pathdiff = { version = "0.2.1", features = ["camino"] }
 # Memory arena using ids rather than references
 id-arena = "2.1"
-# leb128
-wasabi_leb128 = "0.4.0"
 # Parse wat to wasm
 wat = "1.200.0"
 

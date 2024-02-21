@@ -1,6 +1,4 @@
-use crate::{
-    ast::BinOp,
-};
+use crate::ast::BinOp;
 use ecow::EcoString;
 use im::HashMap;
 use std::cell::RefCell;
@@ -8,50 +6,8 @@ use std::{fmt::Debug, sync::Arc};
 
 use crate::ast::{Assignment, CallArg, CustomType, Definition, Function, Pattern, Statement, TypedExpr};
 use crate::type_::{ModuleInterface, Type};
-use wasabi_leb128::WriteLeb128;
 //TODO non-ascii names and upper-case var names.
 //TODO i32 widening? Check Gleam expectations.
-
-fn encode_unsigned_leb128(x: u32) -> Vec<u8> {
-    //TODO maybe wrong :P
-    let mut buf = Vec::new();
-    let _ = buf.write_leb128(x).unwrap();
-    buf
-    // if x == 0
-    // {
-    //     vec![0]
-    // } else {
-    //     x.to_le_bytes().into_iter().take_while(|x| *x != 0).collect()
-    // }
-    // let mut things = x.to_le_bytes().to_vec();
-    // let huh = things.len() % 7;
-    // let mut y = vec![0,huh];
-    // y.append(&mut things);
-    // y.into_iter().chunks(7).into_iter().enumerate().map();
-    //
-    // todo!()
-}
-
-fn encode_signed_leb128(x: i32) -> Vec<u8> {
-    let mut buf = Vec::new();
-    let _ = buf.write_leb128(x).unwrap();
-    buf
-    //TODO wrong for sure
-    // let mut result = 0;
-    // let mut shift = 0;
-    // let mut input = x.to_be_bytes().to_vec();
-    // loop {
-    //     let byte = input.pop().unwrap_or(0);
-    //     result |= (byte & 0x7f) << shift;
-    //     shift += 7;
-    //     if (0x80 & byte) == 0 {
-    //         if shift < 32 && (byte & 0x40) != 0 {
-    //             return (result | (u8::MAX << shift)).to_le_bytes().to_vec(); //~0 = ~0 then https://en.wikipedia.org/wiki/LEB128
-    //         }
-    //         return result.to_le_bytes().to_vec();
-    //     }
-    // }
-}
 
 pub trait Wasmable {
     fn to_wat(&self) -> EcoString;
@@ -93,7 +49,6 @@ impl Wasmable for WasmTypeSectionEntry {
 #[derive(Clone, Debug)]
 struct WasmFuncDef {
     info: WasmVar,
-    params: Vec<WasmType>,
     return_type: WasmType,
     exported: bool,
 }
@@ -217,10 +172,10 @@ impl Wasmable for WasmInstruction {
 }
 
 pub(crate) struct WasmThing {
-    pub(crate) gleam_module: crate::ast::Module<ModuleInterface, Definition<Arc<Type>, TypedExpr, EcoString, EcoString>>,
-    pub(crate) wasm_instructions: RefCell<Vec<WasmInstruction>>,
-    pub(crate) type_section: RefCell<Vec<WasmTypeSectionEntry>>,
-    pub(crate) functions_type_section_index: RefCell<HashMap<EcoString, (u32, u32)>>,
+    gleam_module: crate::ast::Module<ModuleInterface, Definition<Arc<Type>, TypedExpr, EcoString, EcoString>>,
+    wasm_instructions: RefCell<Vec<WasmInstruction>>,
+    type_section: RefCell<Vec<WasmTypeSectionEntry>>,
+    functions_type_section_index: RefCell<HashMap<EcoString, (u32, u32)>>,
     // pub(crate) wasm_instructions: RefCell<Vec<ModuleField<'static>>>,
     // //AST
     // //Id is pretty private :( identifiers: HashMap<&'a str, Id<'a>>, // Symbol table, but not really, wanted to use for wasm names but unnecessary byte code. Will matter if we do in Gleam  "let x=1; ds(x);"
@@ -337,7 +292,7 @@ impl WasmThing {
 
         let constructor_def = WasmFuncDef {
             info: var.clone(),
-            params: fields.iter().map(|x| x.1.clone()).collect(),
+            // params: fields.iter().map(|x| x.1.clone()).collect(),
             return_type: WasmType::ConcreteRef(struct_def.info.clone()),
             exported: false, //TODO pub structs?
         };
@@ -395,7 +350,7 @@ impl WasmThing {
 
         let func_def = WasmFuncDef {
             info: wasm_var,
-            params: arguments.iter().map(|x| x.1.clone()).collect(),
+            // params: arguments.iter().map(|x| x.1.clone()).collect(),
             return_type: result_type,
             exported: gleam_function.public,
         };
@@ -520,7 +475,7 @@ impl WasmThing {
                 instrs.push(WasmInstruction::LocalGet(WasmVar { name: record_name.clone() }));
                 let mut record_type = record.type_().named_type_name().unwrap().1; //TODO this unwrap!
                 record_type.push_str("_struct");
-                let struct_var = self.type_section.borrow().iter().enumerate().filter_map(|(i, x)|
+                let struct_var = self.type_section.borrow().iter().filter_map(|x|
                     {
                         match x {
                             WasmTypeSectionEntry::PlaceHolder(name) => {

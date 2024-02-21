@@ -844,7 +844,6 @@ dependencies = [
  "toml",
  "tracing",
  "vec1",
- "wasabi_leb128",
  "wat",
  "xxhash-rust",
 ]
@@ -2596,15 +2595,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bfa7760aed19e106de2c7c0b581b509f2f25d3dacaf737cb82ac61bc6d760b0e"
 dependencies = [
  "try-lock",
-]
-
-[[package]]
-name = "wasabi_leb128"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1ef95b2fc26dab4b706f4763b297aa7277a1660e83450fa39e6832e64aeeb637"
-dependencies = [
- "num-traits",
 ]
 
 [[package]]
