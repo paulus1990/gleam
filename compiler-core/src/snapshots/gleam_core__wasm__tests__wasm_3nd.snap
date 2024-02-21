@@ -1,5 +1,5 @@
 ---
-source: compiler-core/src/codegen.rs
+source: compiler-core/src/wasm.rs
 expression: wat
 ---
 (module

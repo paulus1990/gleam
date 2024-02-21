@@ -1,6 +1,6 @@
 ---
-source: compiler-core/src/codegen.rs
-expression: w.to_wat()
+source: compiler-core/src/wasm.rs
+expression: wat
 ---
 (module
 (func $add (export "add") (param $x i32) (param $y i32) (result i32)

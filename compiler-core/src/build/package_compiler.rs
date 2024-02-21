@@ -29,7 +29,7 @@ use std::fs::File;
 use std::io::Write;
 
 use camino::{Utf8Path, Utf8PathBuf};
-use crate::codegen::Wasmable;
+use crate::wasm::Wasmable;
 
 use super::{ErlangAppCodegenConfiguration, TargetCodegenConfiguration, Telemetry};
 
@@ -366,11 +366,12 @@ where
 
     fn perform_wasm_codegen(&self, modules: &[Module]) -> Result<(), Error> {
         //TODO more than 1ste module! But this way can run something :)
+        //TODO move the code here to codegen.rs!
         if modules.len() > 0 {
             let gleam_module = &modules[0];
             let gleam_module = &gleam_module.ast;
             //todo clone lol
-            let w = crate::codegen::WasmThing::new(gleam_module.clone());
+            let w = crate::wasm::WasmThing::new(gleam_module.clone());
             w.transform();
             let mut file = File::create(format!("{}.wat",self.out)).unwrap();
             let wat = w.to_wat();
